@@ -1,7 +1,22 @@
 import * as React from 'react'
 import { useEffect, useState } from 'react'
-import { MessageSquare, Briefcase, Code2, FolderOpen, Monitor, Server, Pencil, ChevronDown, Plus } from 'lucide-react'
+import {
+  MessageSquare,
+  Briefcase,
+  Code2,
+  FolderOpen,
+  Monitor,
+  Server,
+  Pencil,
+  ChevronDown,
+  Plus,
+  ArrowRight,
+  Sparkles,
+  Keyboard,
+  CheckCircle2,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
@@ -28,6 +43,14 @@ const modes: { value: AppMode; labelKey: string; icon: React.ReactNode }[] = [
   { value: 'code', labelKey: 'mode.code', icon: <Code2 className="size-3.5" /> }
 ]
 const DEFAULT_SSH_WORKDIR = ''
+const shortcutItems = [
+  { combo: 'Ctrl+N', labelKey: 'messageList.newChat' },
+  { combo: 'Ctrl+K', labelKey: 'messageList.commands' },
+  { combo: 'Ctrl+B', labelKey: 'messageList.sidebarShortcut' },
+  { combo: 'Ctrl+/', labelKey: 'messageList.shortcutsShortcut' },
+  { combo: 'Ctrl+,', labelKey: 'messageList.settingsShortcut' },
+  { combo: 'Ctrl+D', labelKey: 'messageList.duplicateShortcut' },
+] as const
 
 interface DesktopDirectoryOption {
   name: string
@@ -195,34 +218,87 @@ export function ChatHomePage(): React.JSX.Element {
     void sendMessage(text, images)
   }
 
-  const suggestions =
+  const suggestionCards =
     mode === 'chat'
-      ? [t('messageList.explainAsync'), t('messageList.compareRest'), t('messageList.writeRegex')]
+      ? [
+          {
+            prompt: t('messageList.explainAsync'),
+            icon: <Sparkles className="size-4" />,
+            toneClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+          },
+          {
+            prompt: t('messageList.compareRest'),
+            icon: <MessageSquare className="size-4" />,
+            toneClass: 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+          },
+          {
+            prompt: t('messageList.writeRegex'),
+            icon: <Pencil className="size-4" />,
+            toneClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          }
+        ]
       : mode === 'cowork'
         ? [
-            t('messageList.summarizeProject'),
-            t('messageList.findBugs'),
-            t('messageList.addErrorHandling')
+            {
+              prompt: t('messageList.summarizeProject'),
+              icon: <FolderOpen className="size-4" />,
+              toneClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+            },
+            {
+              prompt: t('messageList.findBugs'),
+              icon: <Server className="size-4" />,
+              toneClass: 'bg-orange-500/10 text-orange-600 dark:text-orange-400'
+            },
+            {
+              prompt: t('messageList.addErrorHandling'),
+              icon: <Briefcase className="size-4" />,
+              toneClass: 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
+            }
           ]
-        : [t('messageList.buildCli'), t('messageList.createRestApi'), t('messageList.writeScript')]
+        : [
+            {
+              prompt: t('messageList.buildCli'),
+              icon: <Code2 className="size-4" />,
+              toneClass: 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
+            },
+            {
+              prompt: t('messageList.createRestApi'),
+              icon: <MessageSquare className="size-4" />,
+              toneClass: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+            },
+            {
+              prompt: t('messageList.writeScript'),
+              icon: <Pencil className="size-4" />,
+              toneClass: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400'
+            }
+          ]
 
   const modeHint = {
     chat: {
-      icon: <MessageSquare className="size-10 text-muted-foreground/30" />,
+      icon: <MessageSquare className="size-7" />,
       title: t('messageList.startConversation'),
       desc: t('messageList.startConversationDesc')
     },
     cowork: {
-      icon: <Briefcase className="size-10 text-muted-foreground/30" />,
+      icon: <Briefcase className="size-7" />,
       title: t('messageList.startCowork'),
       desc: t('messageList.startCoworkDesc')
     },
     code: {
-      icon: <Code2 className="size-10 text-muted-foreground/30" />,
+      icon: <Code2 className="size-7" />,
       title: t('messageList.startCoding'),
       desc: t('messageList.startCodingDesc')
     }
   }[mode]
+
+  const heroIconClass = {
+    chat: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+    cowork: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    code: 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
+  }[mode]
+
+  const activeSshConnection =
+    sshConnections.find((connection) => connection.id === sshConnectionId) ?? null
 
   const handleSuggestionClick = (prompt: string): void => {
     useUIStore.getState().setPendingInsertText(prompt)
@@ -231,60 +307,97 @@ export function ChatHomePage(): React.JSX.Element {
   const normalizedWorkingFolder = workingFolder?.toLowerCase()
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-gradient-to-b from-background to-muted/20">
-      <div className="flex flex-1 flex-col items-center justify-center px-4 pb-4">
+    <div className="flex flex-1 flex-col overflow-auto bg-gradient-to-b from-background via-background to-muted/20">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-4 py-8">
         {/* Mode switcher */}
-        <div className="mb-8 flex items-center gap-0.5 rounded-lg bg-background/95 backdrop-blur-sm p-0.5 shadow-md border border-border/50">
-          {modes.map((m, i) => (
-            <Tooltip key={m.value}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={mode === m.value ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className={cn(
-                    'h-7 gap-1.5 rounded-md px-3 text-xs font-medium transition-all duration-200',
-                    mode === m.value
-                      ? 'bg-background shadow-sm ring-1 ring-border/50'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                  onClick={() => {
-                    setMode(m.value)
-                    if (m.value === 'chat') {
-                      setFolderDialogOpen(false)
-                    }
-                  }}
-                >
-                  {m.icon}
-                  {tCommon(m.labelKey)}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {tCommon(m.labelKey)} (Ctrl+{i + 1})
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-
-        {/* Icon + title */}
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <div className="rounded-2xl bg-muted/40 p-4">{modeHint.icon}</div>
-          <div>
-            <p className="text-base font-semibold text-foreground/80">{modeHint.title}</p>
-            <p className="mt-1.5 text-sm text-muted-foreground/60 max-w-[340px]">{modeHint.desc}</p>
+        <div className="mb-5 flex justify-center">
+          <div className="flex items-center gap-0.5 rounded-xl border border-border/50 bg-background/95 p-0.5 shadow-md backdrop-blur-sm">
+            {modes.map((m, i) => (
+              <Tooltip key={m.value}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={mode === m.value ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className={cn(
+                      'h-8 gap-1.5 rounded-lg px-3 text-xs font-medium transition-all duration-200',
+                      mode === m.value
+                        ? 'bg-background shadow-sm ring-1 ring-border/50'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                    onClick={() => {
+                      setMode(m.value)
+                      if (m.value === 'chat') {
+                        setFolderDialogOpen(false)
+                      }
+                    }}
+                  >
+                    {m.icon}
+                    {tCommon(m.labelKey)}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {tCommon(m.labelKey)} (Ctrl+{i + 1})
+                </TooltipContent>
+              </Tooltip>
+            ))}
           </div>
         </div>
 
-        {/* Suggestion chips */}
-        <div className="mb-6 flex flex-wrap justify-center gap-2 max-w-[420px]">
-          {suggestions.map((prompt) => (
-            <button
-              key={prompt}
-              className="rounded-lg border bg-muted/30 px-3 py-1.5 text-[11px] text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-colors"
-              onClick={() => handleSuggestionClick(prompt)}
-            >
-              {prompt}
-            </button>
-          ))}
+        <div className="mb-5 rounded-[28px] border border-border/60 bg-background/85 p-6 shadow-sm backdrop-blur-sm">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <Badge variant="secondary" className="rounded-full px-2.5 py-1 text-[11px]">
+              {tCommon(`mode.${mode}`)}
+            </Badge>
+            <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[11px]">
+              {mode === 'chat'
+                ? t('messageList.readyToStart', { defaultValue: '准备就绪' })
+                : sshConnectionId
+                  ? t('messageList.remoteWorkspace', { defaultValue: '远程工作区' })
+                  : t('messageList.localWorkspace', { defaultValue: '本地工作区' })}
+            </Badge>
+            {mode !== 'chat' && activeProject?.name && (
+              <Badge variant="outline" className="max-w-full rounded-full px-2.5 py-1 text-[11px]">
+                <span className="truncate">{activeProject.name}</span>
+              </Badge>
+            )}
+          </div>
+
+          {/* Icon + title */}
+          <div className="mb-5 flex flex-col gap-4 text-center sm:flex-row sm:items-start sm:text-left">
+            <div className={cn('mx-auto flex size-16 items-center justify-center rounded-3xl sm:mx-0', heroIconClass)}>
+              {modeHint.icon}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                {modeHint.title}
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                {modeHint.desc}
+              </p>
+            </div>
+          </div>
+
+          {/* Suggestion chips */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {suggestionCards.map((item) => (
+              <button
+                key={item.prompt}
+                className="group rounded-2xl border border-border/60 bg-muted/20 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background"
+                onClick={() => handleSuggestionClick(item.prompt)}
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className={cn('flex size-9 items-center justify-center rounded-2xl', item.toneClass)}>
+                    {item.icon}
+                  </div>
+                  <ArrowRight className="size-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                </div>
+                <p className="line-clamp-2 text-sm font-medium leading-6 text-foreground">{item.prompt}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t('messageList.clickToFill', { defaultValue: '点击可填入输入框' })}
+                </p>
+              </button>
+            ))}
+          </div>
         </div>
 
         {mode !== 'chat' && (
