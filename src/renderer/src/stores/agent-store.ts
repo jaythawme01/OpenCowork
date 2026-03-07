@@ -36,14 +36,16 @@ function normalizeToolInput(input: Record<string, unknown>): Record<string, unkn
     if (serialized.length <= MAX_TOOL_INPUT_PREVIEW_CHARS) return input
     return {
       _truncated: true,
-      preview: truncateText(serialized, MAX_TOOL_INPUT_PREVIEW_CHARS),
+      preview: truncateText(serialized, MAX_TOOL_INPUT_PREVIEW_CHARS)
     }
   } catch {
     return { _truncated: true, preview: '[unserializable input]' }
   }
 }
 
-function limitToolResultContent(output: ToolResultContent | undefined): ToolResultContent | undefined {
+function limitToolResultContent(
+  output: ToolResultContent | undefined
+): ToolResultContent | undefined {
   if (output === undefined) return undefined
   if (typeof output === 'string') {
     return truncateText(output, MAX_TOOL_OUTPUT_TEXT_CHARS)
@@ -51,7 +53,10 @@ function limitToolResultContent(output: ToolResultContent | undefined): ToolResu
 
   const normalized: Array<
     | { type: 'text'; text: string }
-    | { type: 'image'; source: { type: 'base64' | 'url'; mediaType?: string; data?: string; url?: string } }
+    | {
+        type: 'image'
+        source: { type: 'base64' | 'url'; mediaType?: string; data?: string; url?: string }
+      }
   > = []
   let totalChars = 0
 
@@ -63,7 +68,7 @@ function limitToolResultContent(output: ToolResultContent | undefined): ToolResu
       if (totalChars >= MAX_TOOL_OUTPUT_TEXT_CHARS) {
         normalized.push({
           type: 'text',
-          text: `[tool output truncated after ${MAX_TOOL_OUTPUT_TEXT_CHARS} chars]`,
+          text: `[tool output truncated after ${MAX_TOOL_OUTPUT_TEXT_CHARS} chars]`
         })
         break
       }
@@ -77,7 +82,7 @@ function limitToolResultContent(output: ToolResultContent | undefined): ToolResu
     ) {
       normalized.push({
         type: 'text',
-        text: `[image data omitted, ${block.source.data.length} base64 chars]`,
+        text: `[image data omitted, ${block.source.data.length} base64 chars]`
       })
       continue
     }
@@ -93,7 +98,7 @@ function normalizeToolCall(tc: ToolCallState): ToolCallState {
     ...tc,
     input: normalizeToolInput(tc.input),
     output: limitToolResultContent(tc.output),
-    error: tc.error ? truncateText(tc.error, MAX_TOOL_ERROR_CHARS) : tc.error,
+    error: tc.error ? truncateText(tc.error, MAX_TOOL_ERROR_CHARS) : tc.error
   }
 }
 
@@ -102,7 +107,7 @@ function normalizeToolCallPatch(patch: Partial<ToolCallState>): Partial<ToolCall
     ...patch,
     ...(patch.input ? { input: normalizeToolInput(patch.input) } : {}),
     ...(patch.output !== undefined ? { output: limitToolResultContent(patch.output) } : {}),
-    ...(patch.error ? { error: truncateText(patch.error, MAX_TOOL_ERROR_CHARS) } : {}),
+    ...(patch.error ? { error: truncateText(patch.error, MAX_TOOL_ERROR_CHARS) } : {})
   }
 }
 
@@ -389,7 +394,7 @@ export const useAgentStore = create<AgentStore>()(
           if (prevSessionId) {
             state.sessionToolCallsCache[prevSessionId] = {
               pending: [...state.pendingToolCalls],
-              executed: [...state.executedToolCalls],
+              executed: [...state.executedToolCalls]
             }
           }
           // Restore tool calls from cache for the next session (or clear)
@@ -520,7 +525,7 @@ export const useAgentStore = create<AgentStore>()(
                 port: item.port ?? existing?.port,
                 exitCode: item.exitCode ?? existing?.exitCode,
                 createdAt: item.createdAt ?? existing?.createdAt ?? Date.now(),
-                updatedAt: Date.now(),
+                updatedAt: Date.now()
               }
             }
             trimBackgroundProcessMap(state.backgroundProcesses)
@@ -550,7 +555,7 @@ export const useAgentStore = create<AgentStore>()(
                   port: payload.port,
                   exitCode: payload.exitCode,
                   createdAt: now,
-                  updatedAt: now,
+                  updatedAt: now
                 }
             if (payload.data) {
               next.output = appendBackgroundOutput(next.output, payload.data)
@@ -589,7 +594,7 @@ export const useAgentStore = create<AgentStore>()(
             port: state.backgroundProcesses[process.id]?.port,
             exitCode: undefined,
             createdAt: state.backgroundProcesses[process.id]?.createdAt ?? now,
-            updatedAt: now,
+            updatedAt: now
           }
           trimBackgroundProcessMap(state.backgroundProcesses)
         })
@@ -633,7 +638,7 @@ export const useAgentStore = create<AgentStore>()(
         const result = (await ipcClient.invoke(IPC.PROCESS_WRITE, {
           id,
           input,
-          appendNewline,
+          appendNewline
         })) as { success?: boolean; error?: string }
         set((state) => {
           const process = state.backgroundProcesses[id]
@@ -749,7 +754,7 @@ export const useAgentStore = create<AgentStore>()(
                 toolCalls: [],
                 streamingText: '',
                 startedAt: Date.now(),
-                completedAt: null,
+                completedAt: null
               }
               break
             case 'sub_agent_iteration': {
@@ -776,7 +781,10 @@ export const useAgentStore = create<AgentStore>()(
             case 'sub_agent_text_delta': {
               const sa = state.activeSubAgents[id]
               if (sa) {
-                sa.streamingText = truncateText(sa.streamingText + event.text, MAX_STREAMING_TEXT_CHARS)
+                sa.streamingText = truncateText(
+                  sa.streamingText + event.text,
+                  MAX_STREAMING_TEXT_CHARS
+                )
               }
               break
             }
@@ -883,7 +891,7 @@ export const useAgentStore = create<AgentStore>()(
             trimToolCallArray(state.executedToolCalls)
           }
         })
-      },
+      }
     })),
     {
       name: 'opencowork-agent',
@@ -891,8 +899,8 @@ export const useAgentStore = create<AgentStore>()(
       partialize: (state) => ({
         completedSubAgents: state.completedSubAgents,
         subAgentHistory: state.subAgentHistory,
-        approvedToolNames: state.approvedToolNames,
-      }),
+        approvedToolNames: state.approvedToolNames
+      })
     }
   )
 )

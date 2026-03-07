@@ -12,12 +12,16 @@ interface RunChangeReviewCardProps {
 }
 
 function summarizeFiles(changeSet: AgentRunChangeSet): string[] {
-  return [...new Set(changeSet.changes.map((change) => change.filePath.split(/[\\/]/).slice(-2).join('/')))]
+  return [
+    ...new Set(
+      changeSet.changes.map((change) => change.filePath.split(/[\\/]/).slice(-2).join('/'))
+    )
+  ]
 }
 
 export function RunChangeReviewCard({
   runId,
-  changeSet,
+  changeSet
 }: RunChangeReviewCardProps): React.JSX.Element {
   const { t } = useTranslation('chat')
   const acceptRunChanges = useAgentStore((state) => state.acceptRunChanges)
@@ -100,9 +104,16 @@ export function RunChangeReviewCard({
             variant={changeSet.status === 'conflicted' ? 'outline' : 'destructive'}
             onClick={handleRollback}
             disabled={!actionable || isAccepting || isRollingBack}
-            className={cn(changeSet.status === 'conflicted' && 'border-amber-500/30 text-amber-500 hover:bg-amber-500/10')}
+            className={cn(
+              changeSet.status === 'conflicted' &&
+                'border-amber-500/30 text-amber-500 hover:bg-amber-500/10'
+            )}
           >
-            {isRollingBack ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
+            {isRollingBack ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <RotateCcw className="size-3" />
+            )}
             {t('action.undo', { ns: 'common' })}
           </Button>
         </div>

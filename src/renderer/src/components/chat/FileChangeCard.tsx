@@ -27,22 +27,54 @@ interface FileChangeCardProps {
 // ── Helpers ──────────────────────────────────────────────────────
 
 function detectLang(filePath: string): string {
-  const ext = filePath.includes('.') ? filePath.split('.').pop()?.toLowerCase() ?? '' : ''
+  const ext = filePath.includes('.') ? (filePath.split('.').pop()?.toLowerCase() ?? '') : ''
   const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-    py: 'python', rs: 'rust', go: 'go', json: 'json',
-    css: 'css', scss: 'scss', less: 'less',
-    html: 'html', htm: 'html', xml: 'xml', svg: 'xml',
-    md: 'markdown', mdx: 'markdown',
-    yaml: 'yaml', yml: 'yaml', toml: 'toml',
-    sh: 'bash', bash: 'bash', zsh: 'bash',
-    sql: 'sql', graphql: 'graphql', gql: 'graphql',
-    c: 'c', h: 'c', cpp: 'cpp', cxx: 'cpp', cc: 'cpp', hpp: 'cpp',
-    java: 'java', kt: 'kotlin', kts: 'kotlin',
-    rb: 'ruby', php: 'php', swift: 'swift',
-    dockerfile: 'docker', makefile: 'makefile',
-    r: 'r', lua: 'lua', dart: 'dart',
-    ini: 'ini', env: 'bash', conf: 'ini',
+    ts: 'typescript',
+    tsx: 'tsx',
+    js: 'javascript',
+    jsx: 'jsx',
+    py: 'python',
+    rs: 'rust',
+    go: 'go',
+    json: 'json',
+    css: 'css',
+    scss: 'scss',
+    less: 'less',
+    html: 'html',
+    htm: 'html',
+    xml: 'xml',
+    svg: 'xml',
+    md: 'markdown',
+    mdx: 'markdown',
+    yaml: 'yaml',
+    yml: 'yaml',
+    toml: 'toml',
+    sh: 'bash',
+    bash: 'bash',
+    zsh: 'bash',
+    sql: 'sql',
+    graphql: 'graphql',
+    gql: 'graphql',
+    c: 'c',
+    h: 'c',
+    cpp: 'cpp',
+    cxx: 'cpp',
+    cc: 'cpp',
+    hpp: 'cpp',
+    java: 'java',
+    kt: 'kotlin',
+    kts: 'kotlin',
+    rb: 'ruby',
+    php: 'php',
+    swift: 'swift',
+    dockerfile: 'docker',
+    makefile: 'makefile',
+    r: 'r',
+    lua: 'lua',
+    dart: 'dart',
+    ini: 'ini',
+    env: 'bash',
+    conf: 'ini'
   }
   return map[ext] ?? 'text'
 }
@@ -61,12 +93,13 @@ type DiffLine = { type: 'keep' | 'add' | 'del'; text: string; oldNum?: number; n
 function computeDiff(oldStr: string, newStr: string): DiffLine[] {
   const a = oldStr.split('\n')
   const b = newStr.split('\n')
-  const m = a.length, n = b.length
+  const m = a.length,
+    n = b.length
 
   if (m * n > 100000) {
     return [
       ...a.map((t, i): DiffLine => ({ type: 'del', text: t, oldNum: i + 1 })),
-      ...b.map((t, i): DiffLine => ({ type: 'add', text: t, newNum: i + 1 })),
+      ...b.map((t, i): DiffLine => ({ type: 'add', text: t, newNum: i + 1 }))
     ]
   }
 
@@ -76,11 +109,13 @@ function computeDiff(oldStr: string, newStr: string): DiffLine[] {
       dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1])
 
   const result: DiffLine[] = []
-  let i = m, j = n
+  let i = m,
+    j = n
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
       result.push({ type: 'keep', text: a[i - 1], oldNum: i, newNum: j })
-      i--; j--
+      i--
+      j--
     } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
       result.push({ type: 'add', text: b[j - 1], newNum: j })
       j--
@@ -103,7 +138,9 @@ function summarizeDiff(lines: DiffLine[]): { added: number; deleted: number } {
   )
 }
 
-type DiffChunk = { type: 'lines'; lines: DiffLine[] } | { type: 'collapsed'; count: number; lines: DiffLine[] }
+type DiffChunk =
+  | { type: 'lines'; lines: DiffLine[] }
+  | { type: 'collapsed'; count: number; lines: DiffLine[] }
 
 function foldContext(lines: DiffLine[], ctx: number = 2): DiffChunk[] {
   const chunks: DiffChunk[] = []
@@ -114,7 +151,11 @@ function foldContext(lines: DiffLine[], ctx: number = 2): DiffChunk[] {
       chunks.push({ type: 'lines', lines: keepRun })
     } else {
       chunks.push({ type: 'lines', lines: keepRun.slice(0, ctx) })
-      chunks.push({ type: 'collapsed', count: keepRun.length - ctx * 2, lines: keepRun.slice(ctx, -ctx) })
+      chunks.push({
+        type: 'collapsed',
+        count: keepRun.length - ctx * 2,
+        lines: keepRun.slice(ctx, -ctx)
+      })
       chunks.push({ type: 'lines', lines: keepRun.slice(-ctx) })
     }
     keepRun = []
@@ -126,7 +167,7 @@ function foldContext(lines: DiffLine[], ctx: number = 2): DiffChunk[] {
     } else {
       if (keepRun.length > 0) flushKeep()
       if (chunks.length > 0 && chunks[chunks.length - 1].type === 'lines') {
-        (chunks[chunks.length - 1] as { type: 'lines'; lines: DiffLine[] }).lines.push(line)
+        ;(chunks[chunks.length - 1] as { type: 'lines'; lines: DiffLine[] }).lines.push(line)
       } else {
         chunks.push({ type: 'lines', lines: [line] })
       }
@@ -138,7 +179,11 @@ function foldContext(lines: DiffLine[], ctx: number = 2): DiffChunk[] {
 
 // ── Status Icon ──────────────────────────────────────────────────
 
-function StatusIndicator({ status }: { status: FileChangeCardProps['status'] }): React.JSX.Element | null {
+function StatusIndicator({
+  status
+}: {
+  status: FileChangeCardProps['status']
+}): React.JSX.Element | null {
   switch (status) {
     case 'running':
       return <Loader2 className="size-3.5 animate-spin text-blue-500 shrink-0" />
@@ -175,7 +220,7 @@ function FileIcon({ name }: { name: string }): React.JSX.Element {
 function ChangeStats({
   name,
   input,
-  trackedChange,
+  trackedChange
 }: {
   name: string
   input: Record<string, unknown>
@@ -188,7 +233,9 @@ function ChangeStats({
       const lines = (trackedChange.after.text ?? '').split('\n').length
       return (
         <span className="flex items-center gap-1.5 text-[10px]">
-          <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500 font-medium">{t('fileChange.new')}</span>
+          <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500 font-medium">
+            {t('fileChange.new')}
+          </span>
           <span className="text-green-400/70">+{lines}</span>
         </span>
       )
@@ -210,7 +257,9 @@ function ChangeStats({
     const lines = content.split('\n').length
     return (
       <span className="flex items-center gap-1.5 text-[10px]">
-        <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500 font-medium">{t('fileChange.new')}</span>
+        <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500 font-medium">
+          {t('fileChange.new')}
+        </span>
         <span className="text-green-400/70">+{lines}</span>
       </span>
     )
@@ -229,7 +278,9 @@ function ChangeStats({
   }
   if (name === 'Delete') {
     return (
-      <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400 font-medium">{t('fileChange.deleted')}</span>
+      <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400 font-medium">
+        {t('fileChange.deleted')}
+      </span>
     )
   }
   return null
@@ -244,20 +295,36 @@ function InlineDiff({ oldStr, newStr }: { oldStr: string; newStr: string }): Rea
   const [expandedChunks, setExpandedChunks] = React.useState<Set<number>>(new Set())
 
   const renderLine = (line: DiffLine, key: number): React.JSX.Element => (
-    <div key={key} className={cn('flex', line.type === 'del' && 'bg-red-500/10', line.type === 'add' && 'bg-green-500/10')}>
-      <span className={cn(
-        'select-none w-5 shrink-0 text-right pr-1',
-        line.type === 'del' ? 'text-red-400/40' : line.type === 'add' ? 'text-green-400/40' : 'text-zinc-600'
-      )}>
+    <div
+      key={key}
+      className={cn(
+        'flex',
+        line.type === 'del' && 'bg-red-500/10',
+        line.type === 'add' && 'bg-green-500/10'
+      )}
+    >
+      <span
+        className={cn(
+          'select-none w-5 shrink-0 text-right pr-1',
+          line.type === 'del'
+            ? 'text-red-400/40'
+            : line.type === 'add'
+              ? 'text-green-400/40'
+              : 'text-zinc-600'
+        )}
+      >
         {line.oldNum ?? line.newNum ?? ''}
       </span>
-      <span className={cn(
-        'px-1.5 flex-1',
-        line.type === 'del' && 'text-red-300/80',
-        line.type === 'add' && 'text-green-300/80',
-        line.type === 'keep' && 'text-zinc-500',
-      )}>
-        {line.type === 'del' ? '- ' : line.type === 'add' ? '+ ' : '  '}{line.text}
+      <span
+        className={cn(
+          'px-1.5 flex-1',
+          line.type === 'del' && 'text-red-300/80',
+          line.type === 'add' && 'text-green-300/80',
+          line.type === 'keep' && 'text-zinc-500'
+        )}
+      >
+        {line.type === 'del' ? '- ' : line.type === 'add' ? '+ ' : '  '}
+        {line.text}
       </span>
     </div>
   )
@@ -290,7 +357,15 @@ function InlineDiff({ oldStr, newStr }: { oldStr: string; newStr: string }): Rea
 
 // ── New File Content View ────────────────────────────────────────
 
-function NewFileContent({ content, filePath, isStreaming }: { content: string; filePath: string; isStreaming?: boolean }): React.JSX.Element {
+function NewFileContent({
+  content,
+  filePath,
+  isStreaming
+}: {
+  content: string
+  filePath: string
+  isStreaming?: boolean
+}): React.JSX.Element {
   const { t } = useTranslation('chat')
   const lang = detectLang(filePath)
   const lines = content.split('\n').length
@@ -308,7 +383,13 @@ function NewFileContent({ content, filePath, isStreaming }: { content: string; f
 
   return (
     <div>
-      <div ref={codeRef} style={{ maxHeight: isStreaming ? '400px' : expanded ? '600px' : '200px', overflow: 'auto' }}>
+      <div
+        ref={codeRef}
+        style={{
+          maxHeight: isStreaming ? '400px' : expanded ? '600px' : '200px',
+          overflow: 'auto'
+        }}
+      >
         <SyntaxHighlighter
           language={lang}
           style={oneDark}
@@ -317,11 +398,16 @@ function NewFileContent({ content, filePath, isStreaming }: { content: string; f
             padding: '0.5rem',
             fontSize: '11px',
             background: 'transparent',
-            fontFamily: MONO_FONT,
+            fontFamily: MONO_FONT
           }}
           codeTagProps={{ style: { fontFamily: 'inherit' } }}
           showLineNumbers
-          lineNumberStyle={{ minWidth: '2em', paddingRight: '0.5em', color: 'rgba(74,222,128,0.3)', userSelect: 'none' }}
+          lineNumberStyle={{
+            minWidth: '2em',
+            paddingRight: '0.5em',
+            color: 'rgba(74,222,128,0.3)',
+            userSelect: 'none'
+          }}
           lineProps={() => ({ style: { background: 'rgba(74,222,128,0.05)' } })}
         >
           {expanded || isStreaming ? content : displayed}
@@ -349,7 +435,7 @@ export function FileChangeCard({
   error,
   startedAt,
   completedAt,
-  trackedChange,
+  trackedChange
 }: FileChangeCardProps): React.JSX.Element {
   const { t } = useTranslation('chat')
   const [collapsed, setCollapsed] = React.useState(false)
@@ -364,40 +450,64 @@ export function FileChangeCard({
   }, [status, error])
 
   const filePath = String(input.file_path ?? input.path ?? '')
-  const elapsed = startedAt && completedAt ? ((completedAt - startedAt) / 1000).toFixed(1) + 's' : null
+  const elapsed =
+    startedAt && completedAt ? ((completedAt - startedAt) / 1000).toFixed(1) + 's' : null
   const outputStr = typeof output === 'string' ? output : undefined
-  const isSuccess = outputStr ? (outputStr.includes('"success"') || outputStr.includes('success')) : false
-  const isOutputError = outputStr ? (!isSuccess && outputStr.length > 0) : false
+  const isSuccess = outputStr
+    ? outputStr.includes('"success"') || outputStr.includes('success')
+    : false
+  const isOutputError = outputStr ? !isSuccess && outputStr.length > 0 : false
 
   // Determine border color based on status
   const borderColor =
-    status === 'streaming' ? 'border-violet-500/30' :
-    status === 'running' ? 'border-blue-500/30' :
-    status === 'error' || (isOutputError && !isSuccess) ? 'border-destructive/30' :
-    name === 'Write' ? 'border-green-500/20' :
-    name === 'Delete' ? 'border-red-500/20' :
-    'border-amber-500/20'
+    status === 'streaming'
+      ? 'border-violet-500/30'
+      : status === 'running'
+        ? 'border-blue-500/30'
+        : status === 'error' || (isOutputError && !isSuccess)
+          ? 'border-destructive/30'
+          : name === 'Write'
+            ? 'border-green-500/20'
+            : name === 'Delete'
+              ? 'border-red-500/20'
+              : 'border-amber-500/20'
 
   return (
-    <div className={cn('my-5 rounded-lg border overflow-hidden transition-all duration-200', borderColor)}>
+    <div
+      className={cn(
+        'my-5 rounded-lg border overflow-hidden transition-all duration-200',
+        borderColor
+      )}
+    >
       {/* Header */}
       <button
         onClick={() => setCollapsed((v) => !v)}
         className={cn(
           'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/20',
-          status === 'running' && 'bg-blue-500/[0.03]',
+          status === 'running' && 'bg-blue-500/[0.03]'
         )}
       >
         <FileIcon name={name} />
         <span className="text-xs font-medium truncate min-w-0 flex-1" title={filePath || undefined}>
-          {filePath ? fileName(filePath) : <span className="text-muted-foreground/50 italic animate-pulse">{t('toolCall.receivingArgs')}</span>}
+          {filePath ? (
+            fileName(filePath)
+          ) : (
+            <span className="text-muted-foreground/50 italic animate-pulse">
+              {t('toolCall.receivingArgs')}
+            </span>
+          )}
         </span>
-        <span className="text-[10px] text-muted-foreground/40 font-mono truncate max-w-[120px] hidden sm:block" title={filePath}>
+        <span
+          className="text-[10px] text-muted-foreground/40 font-mono truncate max-w-[120px] hidden sm:block"
+          title={filePath}
+        >
           {shortPath(filePath)}
         </span>
         <ChangeStats name={name} input={input} trackedChange={trackedChange} />
         {elapsed && (
-          <span className="text-[9px] text-muted-foreground/30 tabular-nums shrink-0">{elapsed}</span>
+          <span className="text-[9px] text-muted-foreground/30 tabular-nums shrink-0">
+            {elapsed}
+          </span>
         )}
         <StatusIndicator status={status} />
       </button>
@@ -438,7 +548,11 @@ export function FileChangeCard({
               />
             )}
             {name === 'Write' && !trackedChange && !!input.content && (
-              <NewFileContent content={String(input.content)} filePath={filePath} isStreaming={status === 'streaming'} />
+              <NewFileContent
+                content={String(input.content)}
+                filePath={filePath}
+                isStreaming={status === 'streaming'}
+              />
             )}
 
             {/* Delete: minimal indicator */}

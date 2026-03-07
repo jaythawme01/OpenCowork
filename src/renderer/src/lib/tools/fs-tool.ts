@@ -21,8 +21,13 @@ function applyEolStyle(str: string, style: EolStyle): string {
   return style === '\n' ? normalized : normalized.replace(/\n/g, '\r\n')
 }
 
-function buildOldStringVariants(oldStr: string, fileContent: string): Array<{ text: string; eol: EolStyle }> {
-  const variants: Array<{ text: string; eol: EolStyle }> = [{ text: oldStr, eol: detectEolStyle(oldStr) }]
+function buildOldStringVariants(
+  oldStr: string,
+  fileContent: string
+): Array<{ text: string; eol: EolStyle }> {
+  const variants: Array<{ text: string; eol: EolStyle }> = [
+    { text: oldStr, eol: detectEolStyle(oldStr) }
+  ]
   const fileHasCrlf = fileContent.includes('\r\n')
   const fileHasOnlyLf = !fileHasCrlf
 
@@ -60,10 +65,10 @@ function localWriteArgs(
             runId: ctx.agentRunId,
             sessionId: ctx.sessionId,
             toolUseId: ctx.currentToolUseId,
-            toolName,
-          },
+            toolName
+          }
         }
-      : {}),
+      : {})
   }
 }
 
@@ -132,37 +137,47 @@ const readHandler: ToolHandler = {
     inputSchema: {
       type: 'object',
       properties: {
-        file_path: { type: 'string', description: 'Absolute path or relative to the working folder' },
+        file_path: {
+          type: 'string',
+          description: 'Absolute path or relative to the working folder'
+        },
         offset: { type: 'number', description: 'Start line (1-indexed)' },
-        limit: { type: 'number', description: 'Number of lines to read' },
+        limit: { type: 'number', description: 'Number of lines to read' }
       },
-      required: ['file_path'],
-    },
+      required: ['file_path']
+    }
   },
   execute: async (input, ctx) => {
     const resolvedPath = resolveToolPath(input.file_path, ctx.workingFolder)
     if (isSsh(ctx)) {
-      const result = await ctx.ipc.invoke(IPC.SSH_FS_READ_FILE, sshArgs(ctx, {
-        path: resolvedPath,
-        offset: input.offset,
-        limit: input.limit,
-      }))
+      const result = await ctx.ipc.invoke(
+        IPC.SSH_FS_READ_FILE,
+        sshArgs(ctx, {
+          path: resolvedPath,
+          offset: input.offset,
+          limit: input.limit
+        })
+      )
       if (isErrorResult(result)) throw new Error(`Read failed: ${result.error}`)
       return String(result)
     }
     const result = await ctx.ipc.invoke(IPC.FS_READ_FILE, {
       path: resolvedPath,
       offset: input.offset,
-      limit: input.limit,
+      limit: input.limit
     })
     // IPC returns { type: 'image', mediaType, data } for image files
-    if (result && typeof result === 'object' && (result as Record<string, unknown>).type === 'image') {
+    if (
+      result &&
+      typeof result === 'object' &&
+      (result as Record<string, unknown>).type === 'image'
+    ) {
       const img = result as { mediaType: string; data: string }
       return [
         {
           type: 'image' as const,
-          source: { type: 'base64' as const, mediaType: img.mediaType, data: img.data },
-        },
+          source: { type: 'base64' as const, mediaType: img.mediaType, data: img.data }
+        }
       ]
     }
     return String(result)
@@ -174,21 +189,25 @@ const readHandler: ToolHandler = {
       return !isPluginPathAllowed(filePath, ctx, 'read')
     }
     return false
-  },
+  }
 }
 
 const writeHandler: ToolHandler = {
   definition: {
     name: 'Write',
-    description: 'Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided path.\n- If this is an existing file, you MUST use the Read tool first to read the file\'s contents. This tool will fail if you did not read the file first.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.\n- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.',
+    description:
+      "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided path.\n- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.\n- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.",
     inputSchema: {
       type: 'object',
       properties: {
-        file_path: { type: 'string', description: 'Absolute path or relative to the working folder' },
-        content: { type: 'string', description: 'The content to write to the file' },
+        file_path: {
+          type: 'string',
+          description: 'Absolute path or relative to the working folder'
+        },
+        content: { type: 'string', description: 'The content to write to the file' }
       },
-      required: ['file_path', 'content'],
-    },
+      required: ['file_path', 'content']
+    }
   },
   execute: async (input, ctx) => {
     if (typeof input.file_path !== 'string' || input.file_path.trim().length === 0) {
@@ -201,10 +220,13 @@ const writeHandler: ToolHandler = {
     const resolvedPath = resolveToolPath(input.file_path, ctx.workingFolder)
 
     if (isSsh(ctx)) {
-      const result = await ctx.ipc.invoke(IPC.SSH_FS_WRITE_FILE, sshArgs(ctx, {
-        path: resolvedPath,
-        content: input.content,
-      }))
+      const result = await ctx.ipc.invoke(
+        IPC.SSH_FS_WRITE_FILE,
+        sshArgs(ctx, {
+          path: resolvedPath,
+          content: input.content
+        })
+      )
       if (isErrorResult(result)) throw new Error(`Write failed: ${result.error}`)
       return JSON.stringify({ success: true, path: resolvedPath })
     }
@@ -227,13 +249,14 @@ const writeHandler: ToolHandler = {
     // Normal sessions: writing outside working folder requires approval
     if (!ctx.workingFolder) return true
     return !filePath.startsWith(ctx.workingFolder)
-  },
+  }
 }
 
 const editHandler: ToolHandler = {
   definition: {
     name: 'Edit',
-    description: 'Performs exact string replacements in files. \n\nUsage:\n- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. \n- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.\n- The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`. \n- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.',
+    description:
+      'Performs exact string replacements in files. \n\nUsage:\n- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. \n- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.\n- The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`. \n- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -243,16 +266,19 @@ const editHandler: ToolHandler = {
         },
         old_string: {
           type: 'string',
-          description: "The text to replace"
+          description: 'The text to replace'
         },
         new_string: {
           type: 'string',
-          description: "The text to replace it with (must be different from old_string)"
+          description: 'The text to replace it with (must be different from old_string)'
         },
-        replace_all: { type: 'boolean', description: 'Replace all occurences of old_string (default false)' },
+        replace_all: {
+          type: 'boolean',
+          description: 'Replace all occurences of old_string (default false)'
+        }
       },
-      required: ['file_path', 'old_string', 'new_string'],
-    },
+      required: ['file_path', 'old_string', 'new_string']
+    }
   },
   execute: async (input, ctx) => {
     const resolvedPath = resolveToolPath(input.file_path, ctx.workingFolder)
@@ -265,7 +291,9 @@ const editHandler: ToolHandler = {
     const replaceAll = Boolean(input.replace_all)
 
     const oldStringVariants = buildOldStringVariants(oldStr, content)
-    const matchedVariant = oldStringVariants.find((variant) => variant.text.length > 0 && content.includes(variant.text))
+    const matchedVariant = oldStringVariants.find(
+      (variant) => variant.text.length > 0 && content.includes(variant.text)
+    )
     if (!matchedVariant) {
       if (replaceAll) {
         return JSON.stringify({ error: 'old_string not found in file' })
@@ -275,7 +303,8 @@ const editHandler: ToolHandler = {
         return JSON.stringify({ error: 'old_string not found in file' })
       }
       const replacement = applyEolStyle(newStr, detectEolStyle(oldStr))
-      const updatedFallback = content.slice(0, idxFallback) + replacement + content.slice(idxFallback + oldStr.length)
+      const updatedFallback =
+        content.slice(0, idxFallback) + replacement + content.slice(idxFallback + oldStr.length)
       const writeChFallback = isSsh(ctx) ? IPC.SSH_FS_WRITE_FILE : IPC.FS_WRITE_FILE
       const writeArgsFallback = isSsh(ctx)
         ? sshArgs(ctx, { path: resolvedPath, content: updatedFallback })
@@ -310,7 +339,7 @@ const editHandler: ToolHandler = {
     }
     if (!ctx.workingFolder) return true
     return !filePath.startsWith(ctx.workingFolder)
-  },
+  }
 }
 
 const lsHandler: ToolHandler = {
@@ -324,23 +353,26 @@ const lsHandler: ToolHandler = {
         ignore: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Glob patterns to ignore',
-        },
+          description: 'Glob patterns to ignore'
+        }
       },
-      required: [],
-    },
+      required: []
+    }
   },
   execute: async (input, ctx) => {
     const resolvedPath = resolveToolPath(input.path, ctx.workingFolder)
     if (isSsh(ctx)) {
-      const result = await ctx.ipc.invoke(IPC.SSH_FS_LIST_DIR, sshArgs(ctx, {
-        path: resolvedPath,
-      }))
+      const result = await ctx.ipc.invoke(
+        IPC.SSH_FS_LIST_DIR,
+        sshArgs(ctx, {
+          path: resolvedPath
+        })
+      )
       return JSON.stringify(result)
     }
     const result = await ctx.ipc.invoke(IPC.FS_LIST_DIR, {
       path: resolvedPath,
-      ignore: input.ignore,
+      ignore: input.ignore
     })
     return JSON.stringify(result)
   },
@@ -350,7 +382,7 @@ const lsHandler: ToolHandler = {
       return !isPluginPathAllowed(targetPath, ctx, 'read')
     }
     return false
-  },
+  }
 }
 
 export function registerFsTools(): void {

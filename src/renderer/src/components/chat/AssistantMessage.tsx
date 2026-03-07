@@ -636,7 +636,10 @@ export function AssistantMessage({
   )
   const lastStructuredTextIdx = useMemo(() => {
     if (!isStreaming || !normalizedContent) return -1
-    return normalizedContent.reduce((acc: number, block, idx) => (block.type === 'text' ? idx : acc), -1)
+    return normalizedContent.reduce(
+      (acc: number, block, idx) => (block.type === 'text' ? idx : acc),
+      -1
+    )
   }, [isStreaming, normalizedContent])
   useEffect(() => {
     if (!msgId || isStreaming) return

@@ -86,7 +86,7 @@ export function registerFsHandlers(): void {
           filePath: args.path,
           beforeExists,
           beforeText,
-          afterText: args.content,
+          afterText: args.content
         })
         return { success: true }
       } catch (err) {

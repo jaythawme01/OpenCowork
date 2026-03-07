@@ -55,7 +55,7 @@ function toSnapshot(exists: boolean, text?: string): FileSnapshot {
     return {
       exists: false,
       hash: null,
-      size: 0,
+      size: 0
     }
   }
 
@@ -64,7 +64,7 @@ function toSnapshot(exists: boolean, text?: string): FileSnapshot {
     exists: true,
     text: normalizedText,
     hash: hashText(normalizedText),
-    size: Buffer.byteLength(normalizedText, 'utf-8'),
+    size: Buffer.byteLength(normalizedText, 'utf-8')
   }
 }
 
@@ -78,7 +78,7 @@ function readCurrentSnapshot(filePath: string): FileSnapshot {
     return {
       exists: true,
       hash: null,
-      size: 0,
+      size: 0
     }
   }
 
@@ -91,7 +91,7 @@ function cloneSnapshot(snapshot: FileSnapshot): FileSnapshot {
     exists: snapshot.exists,
     text: snapshot.text,
     hash: snapshot.hash,
-    size: snapshot.size,
+    size: snapshot.size
   }
 }
 
@@ -99,18 +99,20 @@ function cloneChange(change: TrackedFileChange): TrackedFileChange {
   return {
     ...change,
     before: cloneSnapshot(change.before),
-    after: cloneSnapshot(change.after),
+    after: cloneSnapshot(change.after)
   }
 }
 
 function cloneRunChangeSet(changeSet: RunChangeSet): RunChangeSet {
   return {
     ...changeSet,
-    changes: changeSet.changes.map(cloneChange),
+    changes: changeSet.changes.map(cloneChange)
   }
 }
 
-function getOrCreateRunChangeSet(meta: Required<Pick<ChangeMeta, 'runId'>> & ChangeMeta): RunChangeSet {
+function getOrCreateRunChangeSet(
+  meta: Required<Pick<ChangeMeta, 'runId'>> & ChangeMeta
+): RunChangeSet {
   const existing = runChanges.get(meta.runId)
   if (existing) {
     if (!existing.sessionId && meta.sessionId) {
@@ -131,7 +133,7 @@ function getOrCreateRunChangeSet(meta: Required<Pick<ChangeMeta, 'runId'>> & Cha
     status: 'open',
     changes: [],
     createdAt,
-    updatedAt: createdAt,
+    updatedAt: createdAt
   }
   runChanges.set(meta.runId, created)
   return created
@@ -166,7 +168,7 @@ export function recordLocalTextWriteChange(args: {
     op: before.exists ? 'modify' : 'create',
     before,
     after,
-    createdAt: Date.now(),
+    createdAt: Date.now()
   })
 }
 
@@ -197,7 +199,7 @@ function rollbackRunChangeSet(runId: string): {
       revertedCount: 0,
       conflictCount: 0,
       conflicts: [],
-      changeset: null,
+      changeset: null
     }
   }
 
@@ -261,7 +263,7 @@ function rollbackRunChangeSet(runId: string): {
     revertedCount,
     conflictCount,
     conflicts,
-    changeset: cloneRunChangeSet(changeSet),
+    changeset: cloneRunChangeSet(changeSet)
   }
 }
 
@@ -280,7 +282,7 @@ export function registerAgentChangeHandlers(): void {
       if (!args?.runId) return { error: 'runId is required' }
       return {
         success: true,
-        changeset: acceptRunChangeSet(args.runId),
+        changeset: acceptRunChangeSet(args.runId)
       }
     } catch (err) {
       return { error: String(err) }
