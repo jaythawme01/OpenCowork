@@ -6,25 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com).
 ## [0.5.0] - 2026-03-09
 
 ### Added
-- **Agent 循环引擎** — 基于 AsyncGenerator 的流式 Agent 循环，支持自动工具调用和决策迭代
-- **Agent 团队协作** — 动态组建多 Agent 团队，并行执行子任务，协同完成复杂工作流
-- **消息平台插件** — 统一插件工厂模式，支持飞书、钉钉、QQ、Telegram 等7大主流消息平台
-- **MCP 协议支持** — 内置 Model Context Protocol 支持，轻松扩展 Agent 工具集和上下文能力
-- **本地代码工作流** — 直接在本地工作区读写文件、执行 Shell 命令、搜索代码，实现代码级协作自动化
-- **多模型支持** — 兼容 OpenAI、Anthropic、DeepSeek、Google 等18+主流大模型，支持视觉和深度思考模式
-- **现代化 UI 界面** — 重新设计的首页、下载页和功能面板，支持深色/浅色主题切换
+- **Agent Loop Engine** — Streaming async generator-based agent execution with automatic tool calling and decision iteration
+- **Agent Team Collaboration** — Dynamic multi-agent team formation, parallel task execution, and collaborative complex workflow handling
+- **7 Messaging Platform Plugins** — Unified plugin factory pattern supporting Feishu, DingTalk, QQ, Telegram, Discord, WhatsApp, and WeCom
+- **MCP Protocol Support** — Built-in Model Context Protocol integration for easy extension of agent tool sets and context capabilities
+- **Local Code Workflows** — Direct file reading/writing, shell command execution, and code search within local workspaces for true code-level collaboration automation
+- **Multi-Model Support** — Compatibility with 18+ major LLMs including OpenAI, Anthropic, DeepSeek, and Google, with vision and deep thinking mode support
+- **Modern UI Overhaul** — Redesigned homepage, download page, and feature panels with dark/light theme switching
 
 ### Changed
-- 升级主应用版本号从 0.4.7 → 0.5.0
-- 更新文档站点首页版本显示从 v0.4.6 → v0.5.0
-- 优化系统提示词，增强 Agent 决策逻辑
-- 改进 AskUser 工具交互流程，支持更灵活的用户输入收集
-- 重构部分组件代码，提升性能和可维护性
+- Bumped main application version from 0.4.7 → 0.5.0
+- Updated documentation homepage version display from v0.4.6 → v0.5.0
+- Optimized system prompt logic and enhanced agent decision-making
+- Improved AskUser tool interaction flow for more flexible user input collection
+- Refactored core component code for better performance and maintainability
 
 ### Fixed
-- 修复文档站点构建中的 React 19 兼容性警告
-- 修复部分动画组件的类型错误
-- 优化依赖包管理，解决潜在的安全漏洞
+- Resolved React 19 compatibility warnings in documentation site builds
+- Fixed type errors in animation components
+- Updated dependency management to address potential security vulnerabilities
 
 ## [0.4.6] - 2026-03-09
 
