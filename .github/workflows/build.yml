@@ -345,18 +345,20 @@ jobs:
           path: out
 
       - name: Package ${{ matrix.platform }}-${{ matrix.artifact_arch }}
-        run: npx electron-builder --mac dmg --${{ matrix.build_arch }} --publish never
+        run: npx electron-builder --mac dmg zip --${{ matrix.build_arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_BUILDER_BINARIES_MIRROR: https://cdn.npmmirror.com/binaries/electron-builder-binaries/
           # 未配置 Apple 开发者证书时，显式关闭自动签名发现，避免构建因签名探测失败
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Rename macOS artifact
+      - name: Prepare macOS artifacts
         shell: bash
         run: |
           mkdir -p release-assets
           dmg_file=$(find dist -maxdepth 1 -type f -name '*.dmg' | head -n 1)
+          zip_file=$(find dist -maxdepth 1 -type f -name '*.zip' | head -n 1)
+          yml_file=$(find dist -maxdepth 1 -type f -name 'latest-mac.yml' | head -n 1)
 
           if [ -z "$dmg_file" ]; then
             echo "❌ No macOS dmg artifact found"
@@ -366,11 +368,30 @@ jobs:
           cp "$dmg_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.dmg"
           echo "✅ Prepared $(basename "$dmg_file") -> OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.dmg"
 
+          if [ -z "$zip_file" ]; then
+            echo "❌ No macOS zip artifact found"
+            exit 1
+          fi
+
+          cp "$zip_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.zip"
+          echo "✅ Prepared $(basename "$zip_file") -> OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.zip"
+
+          if [ -z "$yml_file" ]; then
+            echo "❌ No macOS update metadata found"
+            exit 1
+          fi
+
+          cp "$yml_file" "release-assets/latest-mac-${{ matrix.artifact_arch }}.yml"
+          echo "✅ Prepared $(basename "$yml_file") -> latest-mac-${{ matrix.artifact_arch }}.yml"
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v6
         with:
           name: open-cowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}
-          path: release-assets/*.dmg
+          path: |
+            release-assets/*.dmg
+            release-assets/*.zip
+            release-assets/latest-mac-*.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -382,6 +403,64 @@ jobs:
           echo "📦 Uploading macOS assets to Release: ${TAG_NAME}"
           for file in release-assets/*; do
             [ -f "$file" ] || continue
+            if [[ "$file" == *.yml ]]; then
+              continue
+            fi
             echo "  ⬆️  $(basename "$file")"
             gh release upload "${TAG_NAME}" "$file" --clobber
           done
+
+  publish-macos-update-metadata:
+    needs: [prepare, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download macOS arm64 artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: open-cowork-mac-arm64
+          path: mac-arm64
+
+      - name: Download macOS amd64 artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: open-cowork-mac-amd64
+          path: mac-amd64
+
+      - name: Merge macOS update metadata
+        shell: bash
+        run: |
+          ruby <<'RUBY'
+          require 'yaml'
+
+          def read_update_info(path)
+            data = YAML.load_file(path) || {}
+            files = Array(data['files']).map { |item| item.is_a?(Hash) ? item.dup : {} }
+
+            if files.empty? && data['path']
+              fallback = { 'url' => data['path'] }
+              fallback['sha512'] = data['sha512'] if data['sha512']
+              fallback['size'] = data['size'] if data['size']
+              files << fallback
+            end
+
+            [data, files]
+          end
+
+          arm_data, arm_files = read_update_info('mac-arm64/latest-mac-arm64.yml')
+          amd_data, amd_files = read_update_info('mac-amd64/latest-mac-amd64.yml')
+
+          merged = arm_data.dup
+          merged['files'] = (arm_files + amd_files).uniq { |item| item['url'] }
+          merged['releaseDate'] ||= amd_data['releaseDate']
+          merged['path'] ||= arm_data['path'] || merged['files'].first&.fetch('url', nil)
+          merged['sha512'] ||= arm_data['sha512'] || merged['files'].find { |item| item['url'] == merged['path'] }&.fetch('sha512', nil)
+
+          File.write('latest-mac.yml', YAML.dump(merged))
+          RUBY
+
+      - name: Upload merged macOS update metadata to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+        run: gh release upload "${TAG_NAME}" latest-mac.yml --clobber
