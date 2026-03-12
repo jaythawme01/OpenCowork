@@ -55,6 +55,8 @@ import {
 } from '@renderer/components/ui/dialog'
 import { toast } from 'sonner'
 import { useChatStore, type SessionMode } from '@renderer/stores/chat-store'
+import { useProviderStore } from '@renderer/stores/provider-store'
+import { ModelIcon } from '@renderer/components/settings/provider-icons'
 import { useUIStore } from '@renderer/stores/ui-store'
 import { useAgentStore } from '@renderer/stores/agent-store'
 import { useTeamStore } from '@renderer/stores/team-store'
@@ -149,12 +151,14 @@ export function SessionListPanel(): React.JSX.Element {
   const createProject = useChatStore((s) => s.createProject)
   const renameProject = useChatStore((s) => s.renameProject)
   const deleteProject = useChatStore((s) => s.deleteProject)
+  const updateProjectDirectory = useChatStore((s) => s.updateProjectDirectory)
   const updateSessionTitle = useChatStore((s) => s.updateSessionTitle)
   const clearSessionMessages = useChatStore((s) => s.clearSessionMessages)
   const duplicateSession = useChatStore((s) => s.duplicateSession)
   const updateSessionMode = useChatStore((s) => s.updateSessionMode)
   const togglePinSession = useChatStore((s) => s.togglePinSession)
   const mode = useUIStore((s) => s.mode)
+  const providers = useProviderStore((s) => s.providers)
   const runningSessions = useAgentStore((s) => s.runningSessions)
   const runningSubAgentSessionIdsSig = useAgentStore((s) => s.runningSubAgentSessionIdsSig)
   const activeTeamSessionId = useTeamStore((s) => s.activeTeam?.sessionId ?? null)
@@ -179,6 +183,15 @@ export function SessionListPanel(): React.JSX.Element {
     id: string
     currentName: string
   } | null>(null)
+  const [directoryDialog, setDirectoryDialog] = useState<{
+    projectId: string
+    projectName: string
+  } | null>(null)
+  const [projectModelDialog, setProjectModelDialog] = useState<{
+    projectId: string
+    projectName: string
+  } | null>(null)
+  const [directoryValue, setDirectoryValue] = useState('')
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set())
@@ -311,6 +324,90 @@ export function SessionListPanel(): React.JSX.Element {
       })
     },
     []
+  )
+
+  const handleEditProjectDirectory = useCallback((projectId: string, projectName: string): void => {
+    const project = useChatStore.getState().projects.find((item) => item.id === projectId)
+    setDirectoryDialog({
+      projectId,
+      projectName
+    })
+    setDirectoryValue(project?.workingFolder ?? '')
+  }, [])
+
+  const handleEditProjectModel = useCallback((projectId: string, projectName: string): void => {
+    setProjectModelDialog({ projectId, projectName })
+  }, [])
+
+  const confirmProjectDirectory = useCallback((): void => {
+    if (!directoryDialog) return
+    updateProjectDirectory(directoryDialog.projectId, {
+      workingFolder: directoryValue.trim() || null,
+      sshConnectionId: null
+    })
+    setDirectoryDialog(null)
+    toast.success('项目工作目录已更新')
+  }, [directoryDialog, directoryValue, updateProjectDirectory])
+
+  const selectProjectDirectory = useCallback(async (): Promise<void> => {
+    const result = (await window.electron.ipcRenderer.invoke('fs:select-folder')) as {
+      canceled?: boolean
+      path?: string
+    }
+    if (result.canceled) return
+    setDirectoryValue(result.path ?? '')
+  }, [])
+
+  const chatProviderGroups = useMemo(
+    () =>
+      providers
+        .filter((provider) => provider.enabled)
+        .map((provider) => ({
+          provider,
+          models: provider.models.filter(
+            (model) => model.enabled && (!model.category || model.category === 'chat')
+          )
+        }))
+        .filter((group) => group.models.length > 0),
+    [providers]
+  )
+
+  const buildModelValue = useCallback((providerId: string, modelId: string): string => {
+    return `${providerId}::${modelId}`
+  }, [])
+
+  const applyProjectModel = useCallback(
+    (value: string): void => {
+      if (!projectModelDialog) return
+      const project = useChatStore.getState().projects.find((item) => item.id === projectModelDialog.projectId)
+      if (!project) return
+      if (value === '__global__') {
+        const now = Date.now()
+        useChatStore.setState((state) => {
+          const target = state.projects.find((item) => item.id === projectModelDialog.projectId)
+          if (!target) return
+          target.providerId = undefined
+          target.modelId = undefined
+          target.updatedAt = now
+        })
+        setProjectModelDialog(null)
+        toast.success('项目默认模型已改为跟随全局')
+        return
+      }
+      const [providerId, modelId] = value.split('::')
+      if (!providerId || !modelId) return
+      const now = Date.now()
+      useChatStore.setState((state) => {
+        const target = state.projects.find((item) => item.id === projectModelDialog.projectId)
+        if (!target) return
+        target.providerId = providerId
+        target.modelId = modelId
+        target.updatedAt = now
+      })
+      setProjectModelDialog(null)
+      toast.success('项目默认模型已更新')
+    },
+    [projectModelDialog]
   )
 
   const confirmDeleteProject = useCallback(async (): Promise<void> => {
@@ -613,6 +710,23 @@ export function SessionListPanel(): React.JSX.Element {
                           <Pencil className="size-4" />
                           {t('action.rename', { ns: 'common' })}
                         </ContextMenuItem>
+                        <ContextMenuItem
+                          disabled={!canManageProject}
+                          onClick={() => handleEditProjectDirectory(group.project.id, group.project.name)}
+                        >
+                          <FolderOpen className="size-4" />
+                          修改工作目录
+                        </ContextMenuItem>
+                        <ContextMenuSub>
+                          <ContextMenuSubTrigger inset>修改默认模型</ContextMenuSubTrigger>
+                          <ContextMenuSubContent className="w-72">
+                            <ContextMenuItem
+                              onClick={() => handleEditProjectModel(group.project.id, group.project.name)}
+                            >
+                              打开模型选择
+                            </ContextMenuItem>
+                          </ContextMenuSubContent>
+                        </ContextMenuSub>
                         <ContextMenuSeparator />
                         <ContextMenuItem
                           variant="destructive"
@@ -1007,6 +1121,107 @@ export function SessionListPanel(): React.JSX.Element {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={!!projectModelDialog}
+        onOpenChange={(open) => {
+          if (!open) setProjectModelDialog(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg p-4">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              修改项目默认模型{projectModelDialog ? ` · ${projectModelDialog.projectName}` : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start"
+              onClick={() => applyProjectModel('__global__')}
+            >
+              跟随全局默认模型
+            </Button>
+            {chatProviderGroups.map(({ provider, models }) => (
+              <div key={`project-model-${provider.id}`} className="space-y-1">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-1">
+                  {provider.name}
+                </div>
+                {models.map((model) => (
+                  <Button
+                    key={`project-model-${provider.id}-${model.id}`}
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => applyProjectModel(buildModelValue(provider.id, model.id))}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ModelIcon
+                        icon={model.icon}
+                        modelId={model.id}
+                        providerBuiltinId={provider.builtinId}
+                        size={16}
+                        className="text-muted-foreground/70"
+                      />
+                      <div className="flex min-w-0 flex-col items-start text-left">
+                        <span className="truncate max-w-[220px]">{model.name}</span>
+                        <span className="text-[10px] text-muted-foreground/60 truncate max-w-[220px]">
+                          {model.id}
+                        </span>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!directoryDialog}
+        onOpenChange={(open) => {
+          if (!open) setDirectoryDialog(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg p-4">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              修改项目工作目录{directoryDialog ? ` · ${directoryDialog.projectName}` : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={directoryValue}
+              onChange={(event) => setDirectoryValue(event.target.value)}
+              placeholder="输入本地工作目录，留空表示清空"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  confirmProjectDirectory()
+                }
+                if (event.key === 'Escape') {
+                  setDirectoryDialog(null)
+                }
+              }}
+            />
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => void selectProjectDirectory()}>
+                浏览...
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDirectoryDialog(null)}>
+              {t('action.cancel', { ns: 'common' })}
+            </Button>
+            <Button size="sm" onClick={confirmProjectDirectory}>
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!renameDialog}

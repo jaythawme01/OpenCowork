@@ -26,8 +26,6 @@ import { AnimatePresence } from 'motion/react'
 import { useUIStore, type SettingsTab } from '@renderer/stores/ui-store'
 import { useChatStore } from '@renderer/stores/chat-store'
 import { useSettingsStore } from '@renderer/stores/settings-store'
-import { formatTokens } from '@renderer/lib/format-tokens'
-import { useDebouncedTokens } from '@renderer/hooks/use-estimated-tokens'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { confirm } from '@renderer/components/ui/confirm-dialog'
@@ -340,7 +338,6 @@ function GeneralPanel(): React.JSX.Element {
   const { t } = useTranslation('settings')
   const settings = useSettingsStore()
   const { setTheme } = useTheme()
-  const promptTokens = useDebouncedTokens(settings.systemPrompt)
   const currentVersion = normalizeVersion(packageJson.version ?? '0.0.0')
   const [latestVersion, setLatestVersion] = useState<string | null>(null)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
@@ -788,30 +785,6 @@ function GeneralPanel(): React.JSX.Element {
 
       <Separator />
 
-      {/* System Prompt */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <label className="text-sm font-medium">{t('general.systemPrompt')}</label>
-            <p className="text-xs text-muted-foreground">{t('general.systemPromptDesc')}</p>
-          </div>
-          {settings.systemPrompt && (
-            <span className="text-[10px] text-muted-foreground/50 tabular-nums">
-              {promptTokens > 0 ? `~${formatTokens(promptTokens)} tokens` : ''}
-            </span>
-          )}
-        </div>
-        <Textarea
-          placeholder={t('general.systemPromptPlaceholder')}
-          value={settings.systemPrompt}
-          onChange={(e) => settings.updateSettings({ systemPrompt: e.target.value })}
-          rows={4}
-          className="max-w-lg"
-        />
-      </section>
-
-      <Separator />
-
       {/* Team Tools */}
       <section className="space-y-3">
         <div className="flex items-center justify-between max-w-lg">
@@ -1042,7 +1015,6 @@ function GeneralPanel(): React.JSX.Element {
               fastModel: 'claude-3-5-haiku-20241022',
               maxTokens: 32000,
               temperature: 0.7,
-              systemPrompt: '',
               theme: 'system',
               backgroundColor: '',
               fontFamily: '',
@@ -1425,6 +1397,14 @@ function ModelPanel(): React.JSX.Element {
 
   const activeModelValue =
     activeProvider && activeModelId ? buildModelValue(activeProvider.id, activeModelId) : ''
+  const newSessionDefaultModelValue = settings.newSessionDefaultModel
+    ? settings.newSessionDefaultModel.useGlobalActiveModel
+      ? '__global__'
+      : buildModelValue(
+          settings.newSessionDefaultModel.providerId,
+          settings.newSessionDefaultModel.modelId
+        )
+    : '__global__'
   const translationProvider =
     chatProviderGroups.find(
       ({ provider }) => provider.id === (activeTranslationProviderId ?? activeProviderId)
@@ -1469,6 +1449,81 @@ function ModelPanel(): React.JSX.Element {
         </div>
       ) : (
         <>
+          {/* New Session Default Model */}
+          <section className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">新建会话默认模型</label>
+              <p className="text-xs text-muted-foreground">
+                控制新建会话默认绑定的模型；选择跟随当前活动模型时，会沿用顶部当前选择。
+              </p>
+            </div>
+            {hasAnyEnabledModel ? (
+              <Select
+                value={newSessionDefaultModelValue}
+                onValueChange={(value) => {
+                  if (value === '__global__') {
+                    settings.updateSettings({
+                      newSessionDefaultModel: {
+                        providerId: activeProviderId ?? '',
+                        modelId: activeModelId ?? '',
+                        useGlobalActiveModel: true
+                      }
+                    })
+                    return
+                  }
+                  const parsed = parseModelValue(value)
+                  if (!parsed) return
+                  settings.updateSettings({
+                    newSessionDefaultModel: {
+                      providerId: parsed.providerId,
+                      modelId: parsed.modelId,
+                      useGlobalActiveModel: false
+                    }
+                  })
+                }}
+              >
+                <SelectTrigger className="w-80 text-xs">
+                  <SelectValue placeholder="选择默认模型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__global__" className="text-xs">
+                    跟随当前活动模型
+                  </SelectItem>
+                  {chatProviderGroups.map(({ provider, models }) => (
+                    <SelectGroup key={`${provider.id}-new-session-default`}>
+                      <SelectLabel className="text-[10px] uppercase tracking-wide">
+                        {provider.name}
+                      </SelectLabel>
+                      {models.map((m) => (
+                        <SelectItem
+                          key={`${provider.id}-new-session-${m.id}`}
+                          value={buildModelValue(provider.id, m.id)}
+                          className="text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <ModelIcon
+                              icon={m.icon}
+                              modelId={m.id}
+                              providerBuiltinId={provider.builtinId}
+                              size={16}
+                              className="text-muted-foreground/70"
+                            />
+                            <div className="flex flex-col text-left">
+                              <span>{m.name}</span>
+                              <span className="text-[10px] text-muted-foreground/60">{m.id}</span>
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="text-xs text-muted-foreground/60">{t('model.noModelsHint')}</p>
+            )}
+          </section>
+
           {/* Main Model */}
           <section className="space-y-3">
             <div>

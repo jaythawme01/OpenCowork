@@ -1,4 +1,5 @@
 import WebSocket from 'ws'
+import { getDb } from '../../../db/database'
 import type {
   ChannelEvent,
   ChannelGroup,
@@ -47,6 +48,18 @@ const INVALID_SESSION_RECONNECT_DELAY = 3000
 
 function parseBooleanConfig(value: string | undefined): boolean {
   return /^(1|true|yes|on)$/i.test((value ?? '').trim())
+}
+
+function getWakeupPeriodKey(sourceTimestamp: number, now: number): string | null {
+  const diffMs = now - sourceTimestamp
+  if (diffMs < 0) return null
+
+  const dayMs = 24 * 60 * 60 * 1000
+  if (diffMs < dayMs) return 'day-0'
+  if (diffMs < 3 * dayMs) return 'day-1-3'
+  if (diffMs < 7 * dayMs) return 'day-3-7'
+  if (diffMs < 30 * dayMs) return 'day-7-30'
+  return null
 }
 
 export class QQService implements MessagingChannelService {
@@ -117,7 +130,11 @@ export class QQService implements MessagingChannelService {
   }
 
   async sendMessage(chatId: string, content: string): Promise<{ messageId: string }> {
-    return this.api.sendMessage(parseQQChatId(chatId), content)
+    return this.sendMessageInternal(chatId, content)
+  }
+
+  async sendWakeupMessage(chatId: string, content: string): Promise<{ messageId: string }> {
+    return this.sendMessageInternal(chatId, content, true)
   }
 
   async replyMessage(messageId: string, content: string): Promise<{ messageId: string }> {
@@ -128,6 +145,26 @@ export class QQService implements MessagingChannelService {
     return this.api.sendMessage(parseQQChatId(replyRef.chatId), content, replyRef.messageId)
   }
 
+  private async sendMessageInternal(
+    chatId: string,
+    content: string,
+    allowWakeup = false
+  ): Promise<{ messageId: string }> {
+    const target = parseQQChatId(chatId)
+    if (target.type !== 'c2c' || !allowWakeup) {
+      return this.api.sendMessage(target, content)
+    }
+
+    const wakeup = this.resolveWakeupEligibility(target.id)
+    return this.api.sendMessage(target, content, undefined, { isWakeup: wakeup.enabled })
+      .then((result) => {
+        if (wakeup.enabled && wakeup.periodKey) {
+          this.markWakeupSent(target.id, wakeup.periodKey, wakeup.sourceMessageId, wakeup.sourceTimestamp)
+        }
+        return result
+      })
+  }
+
   async getGroupMessages(chatId: string, count?: number): Promise<ChannelMessage[]> {
     void chatId
     void count
@@ -136,6 +173,74 @@ export class QQService implements MessagingChannelService {
 
   async listGroups(): Promise<ChannelGroup[]> {
     return []
+  }
+
+  private resolveWakeupEligibility(openId: string): {
+    enabled: boolean
+    periodKey: string | null
+    sourceMessageId: string | null
+    sourceTimestamp: number
+  } {
+    const db = getDb()
+    const now = Date.now()
+    const row = db.prepare(
+      `SELECT source_message_id, source_timestamp
+         FROM qq_wakeup_windows
+        WHERE plugin_id = ? AND open_id = ? AND period_key = '__source__'
+        LIMIT 1`
+    ).get(this.pluginId, openId) as { source_message_id?: string | null; source_timestamp?: number } | undefined
+
+    const sourceTimestamp = row?.source_timestamp ?? now
+    const periodKey = getWakeupPeriodKey(sourceTimestamp, now)
+    if (!periodKey) {
+      return {
+        enabled: false,
+        periodKey: null,
+        sourceMessageId: row?.source_message_id ?? null,
+        sourceTimestamp
+      }
+    }
+
+    const existing = db.prepare(
+      `SELECT 1
+         FROM qq_wakeup_windows
+        WHERE plugin_id = ? AND open_id = ? AND period_key = ?
+        LIMIT 1`
+    ).get(this.pluginId, openId, periodKey)
+
+    return {
+      enabled: !existing,
+      periodKey,
+      sourceMessageId: row?.source_message_id ?? null,
+      sourceTimestamp
+    }
+  }
+
+  private markWakeupSent(
+    openId: string,
+    periodKey: string,
+    sourceMessageId: string | null,
+    sourceTimestamp: number
+  ): void {
+    const db = getDb()
+    const now = Date.now()
+    db.prepare(
+      `INSERT OR REPLACE INTO qq_wakeup_windows (
+        plugin_id, open_id, period_key, source_message_id, source_timestamp, sent_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM qq_wakeup_windows WHERE plugin_id = ? AND open_id = ? AND period_key = ?), ?), ?)`
+    ).run(
+      this.pluginId,
+      openId,
+      periodKey,
+      sourceMessageId,
+      sourceTimestamp,
+      now,
+      this.pluginId,
+      openId,
+      periodKey,
+      now,
+      now
+    )
   }
 
   private emit(type: ChannelEvent['type'], data: unknown): void {

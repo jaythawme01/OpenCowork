@@ -296,11 +296,21 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
 
       // Dispatch to the unified MessagingPluginService method with named params
       switch (action) {
-        case 'sendMessage':
+        case 'sendMessage': {
+          const target = service as typeof service & {
+            sendWakeupMessage?: (chatId: string, content: string) => Promise<{ messageId: string }>
+          }
+          if (params.isWakeup === true && typeof target.sendWakeupMessage === 'function') {
+            return await target.sendWakeupMessage(
+              params.chatId as string,
+              params.content as string
+            )
+          }
           return await service.sendMessage(
             params.chatId as string,
             params.content as string
           )
+        }
         case 'replyMessage':
           return await service.replyMessage(
             params.messageId as string,

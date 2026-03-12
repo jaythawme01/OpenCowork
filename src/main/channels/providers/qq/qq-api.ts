@@ -30,6 +30,10 @@ interface QQApiOptions {
   markdownSupport?: boolean
 }
 
+interface QQSendMessageOptions {
+  isWakeup?: boolean
+}
+
 export function parseQQChatId(chatId: string): QQChatTarget {
   const normalized = chatId.replace(/^qqbot:/i, '').trim()
 
@@ -104,11 +108,12 @@ export class QQApi {
   async sendMessage(
     target: QQChatTarget,
     content: string,
-    replyToMessageId?: string
+    replyToMessageId?: string,
+    options: QQSendMessageOptions = {}
   ): Promise<{ messageId: string }> {
     switch (target.type) {
       case 'c2c':
-        return this.sendC2CMessage(target.id, content, replyToMessageId)
+        return this.sendC2CMessage(target.id, content, replyToMessageId, options)
       case 'group':
         return this.sendGroupMessage(target.id, content, replyToMessageId)
       case 'channel':
@@ -121,12 +126,13 @@ export class QQApi {
   async sendC2CMessage(
     openId: string,
     content: string,
-    replyToMessageId?: string
+    replyToMessageId?: string,
+    options: QQSendMessageOptions = {}
   ): Promise<{ messageId: string }> {
     const data = await this.apiRequest<QQMessageResponse>(
       'POST',
       `/v2/users/${encodeURIComponent(openId)}/messages`,
-      this.buildDirectMessageBody(content, replyToMessageId)
+      this.buildDirectMessageBody(content, replyToMessageId, options)
     )
     return { messageId: String(data.id ?? '') }
   }
@@ -139,7 +145,7 @@ export class QQApi {
     const data = await this.apiRequest<QQMessageResponse>(
       'POST',
       `/v2/groups/${encodeURIComponent(groupOpenId)}/messages`,
-      this.buildDirectMessageBody(content, replyToMessageId)
+      this.buildGroupMessageBody(content, replyToMessageId)
     )
     return { messageId: String(data.id ?? '') }
   }
@@ -168,7 +174,8 @@ export class QQApi {
 
   private buildDirectMessageBody(
     content: string,
-    replyToMessageId?: string
+    replyToMessageId?: string,
+    options: QQSendMessageOptions = {}
   ): Record<string, unknown> {
     const trimmed = content.trim()
     if (!trimmed) {
@@ -186,6 +193,32 @@ export class QQApi {
         }
 
     body.msg_seq = replyToMessageId ? this.getNextMsgSeq(replyToMessageId) : 1
+
+    if (replyToMessageId) {
+      body.msg_id = replyToMessageId
+    }
+
+    if (options.isWakeup === true) {
+      body.is_wakeup = true
+    }
+
+    return body
+  }
+
+  private buildGroupMessageBody(
+    content: string,
+    replyToMessageId?: string
+  ): Record<string, unknown> {
+    const trimmed = content.trim()
+    if (!trimmed) {
+      throw new Error('QQ message content cannot be empty')
+    }
+
+    const body: Record<string, unknown> = {
+      content: trimmed,
+      msg_type: 0,
+      msg_seq: replyToMessageId ? this.getNextMsgSeq(replyToMessageId) : 1
+    }
 
     if (replyToMessageId) {
       body.msg_id = replyToMessageId
@@ -257,8 +290,14 @@ export class QQApi {
     const data = this.parseJson<T & { message?: string }>(rawText)
 
     if (!response.ok) {
+      const bodySummary =
+        body && typeof body === 'object'
+          ? JSON.stringify(body).slice(0, 300)
+          : body == null
+            ? ''
+            : String(body).slice(0, 300)
       throw new Error(
-        `QQ API request failed (${response.status}) ${path}: ${data.message ?? rawText.slice(0, 300)}`
+        `QQ API request failed (${response.status}) ${path}: ${data.message ?? rawText.slice(0, 300)}${bodySummary ? ` | body=${bodySummary}` : ''}`
       )
     }
 

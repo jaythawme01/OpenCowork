@@ -126,7 +126,10 @@ export function tryHandleCommand(ctx: CommandContext): boolean | string {
     if (result.reply) {
       const service = ctx.pluginManager.getService(ctx.pluginId)
       if (service) {
-        service.sendMessage(ctx.chatId, result.reply).catch((err) => {
+        const send = ctx.pluginType === 'qq-bot' && ctx.data.messageId
+          ? service.replyMessage(ctx.data.messageId, result.reply)
+          : service.sendMessage(ctx.chatId, result.reply)
+        send.catch((err) => {
           console.error(`[PluginCommand] Failed to send ack for /${cmd}:`, err)
         })
       }
@@ -143,7 +146,10 @@ export function tryHandleCommand(ctx: CommandContext): boolean | string {
   if (result.reply) {
     const service = ctx.pluginManager.getService(ctx.pluginId)
     if (service) {
-      service.sendMessage(ctx.chatId, result.reply).catch((err) => {
+      const send = ctx.pluginType === 'qq-bot' && ctx.data.messageId
+        ? service.replyMessage(ctx.data.messageId, result.reply)
+        : service.sendMessage(ctx.chatId, result.reply)
+      send.catch((err) => {
         console.error(`[PluginCommand] Failed to send reply for /${cmd}:`, err)
       })
     } else {

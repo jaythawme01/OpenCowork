@@ -11,6 +11,7 @@
     "disableThinking": "关闭深度思考",
     "enableThinking": "启用深度思考",
     "thinkingOff": "关闭",
+    "noModelSettings": "当前模型无额外设置（如深度思考、极速模式）",
     "thinkingLevel": "思考: {{level}}",
     "effortDesc": {
       "none": "不推理",

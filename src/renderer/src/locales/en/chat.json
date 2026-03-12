@@ -11,6 +11,7 @@
     "disableThinking": "Disable deep thinking",
     "enableThinking": "Enable deep thinking",
     "thinkingOff": "Off",
+    "noModelSettings": "No extra settings for this model (e.g. deep thinking, fast mode)",
     "thinkingLevel": "Thinking: {{level}}",
     "effortDesc": {
       "none": "No reasoning",

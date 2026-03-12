@@ -8,6 +8,10 @@ export interface ModelBinding {
   modelId: string
 }
 
+export interface SessionDefaultModelBinding extends ModelBinding {
+  useGlobalActiveModel: boolean
+}
+
 export type PromptRecommendationModelBindings = Record<
   'chat' | 'clarify' | 'cowork' | 'code',
   ModelBinding | null
@@ -72,6 +76,7 @@ interface SettingsStore {
 
   // Prompt Recommendation Settings
   promptRecommendationModels: PromptRecommendationModelBindings
+  newSessionDefaultModel: SessionDefaultModelBinding | null
 
   updateSettings: (patch: Partial<Omit<SettingsStore, 'updateSettings'>>) => void
 }
@@ -128,6 +133,7 @@ export const useSettingsStore = create<SettingsStore>()(
         cowork: null,
         code: null
       },
+      newSessionDefaultModel: null,
 
       updateSettings: (patch) => set(patch)
     }),
@@ -161,6 +167,9 @@ export const useSettingsStore = create<SettingsStore>()(
             cowork: null,
             code: null
           }
+        }
+        if (state.newSessionDefaultModel === undefined) {
+          state.newSessionDefaultModel = null
         }
         // Add appearance settings if missing
         if (state.backgroundColor === undefined) {
@@ -228,7 +237,8 @@ export const useSettingsStore = create<SettingsStore>()(
         skillsMarketProvider: state.skillsMarketProvider,
         skillsMarketApiKey: state.skillsMarketApiKey,
         // Prompt Recommendation Settings
-        promptRecommendationModels: state.promptRecommendationModels
+        promptRecommendationModels: state.promptRecommendationModels,
+        newSessionDefaultModel: state.newSessionDefaultModel,
         // NOTE: apiKey is intentionally excluded from localStorage persistence.
         // In production, it should be stored securely in the main process.
       })

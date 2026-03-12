@@ -377,6 +377,24 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_draw_runs_created_at ON draw_runs(created_at DESC);
   `)
 
+  // --- QQ wakeup windows table ---
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS qq_wakeup_windows (
+      plugin_id TEXT NOT NULL,
+      open_id TEXT NOT NULL,
+      period_key TEXT NOT NULL,
+      source_message_id TEXT,
+      source_timestamp INTEGER NOT NULL,
+      sent_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (plugin_id, open_id, period_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_qq_wakeup_windows_open_id
+      ON qq_wakeup_windows(plugin_id, open_id, sent_at DESC);
+  `)
+
   // --- Cron Jobs table ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS cron_jobs (

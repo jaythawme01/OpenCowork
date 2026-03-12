@@ -39,8 +39,6 @@
     "toolbarCollapsedByDefaultDesc": "Off by default. Initializes the left toolbar state when the app opens.",
     "chinese": "中文",
     "english": "English",
-    "systemPrompt": "System Prompt",
-    "systemPromptDesc": "Custom instructions appended to the built-in system prompt",
     "systemPromptPlaceholder": "Add custom instructions...",
     "teamTools": "Team Tools",
     "teamToolsDesc": "Enable Agent Team collaboration, allowing AI to create and manage parallel teams",

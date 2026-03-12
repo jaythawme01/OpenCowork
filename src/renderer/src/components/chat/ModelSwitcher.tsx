@@ -125,7 +125,7 @@ function ModelSettingsPopover({
     useSettingsStore.getState().updateSettings({ reasoningEffort: level, thinkingEnabled: true })
   }, [])
 
-  if (!supportsThinking && !supportsFastMode) return null
+  const hasAnySetting = supportsThinking || supportsFastMode
 
   return (
     <Popover>
@@ -143,6 +143,11 @@ function ModelSettingsPopover({
       </Tooltip>
       <PopoverContent className="w-56 p-2" align="start" side="top" sideOffset={8}>
         <div className="flex flex-col gap-1">
+          {!hasAnySetting && (
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+              {tChat('input.noModelSettings')}
+            </div>
+          )}
           {supportsThinking && (
             <>
               <div className="flex items-center gap-1.5 px-1 pb-1 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
@@ -268,7 +273,6 @@ export function ModelSwitcher(): React.JSX.Element {
   const providers = useProviderStore((s) => s.providers)
   const setActiveProvider = useProviderStore((s) => s.setActiveProvider)
   const setActiveModel = useProviderStore((s) => s.setActiveModel)
-  const hasCustomPrompt = useSettingsStore((s) => !!s.systemPrompt)
 
   const enabledProviders = providers.filter((p) => p.enabled)
   const activeProvider = providers.find((p) => p.id === activeProviderId)
@@ -311,9 +315,6 @@ export function ModelSwitcher(): React.JSX.Element {
                     providerBuiltinId={activeProvider?.builtinId}
                     size={20}
                   />
-                  {hasCustomPrompt && (
-                    <span className="size-1.5 rounded-full bg-violet-400 shrink-0" />
-                  )}
                   <ChevronDown className="size-2.5 opacity-40" />
                 </button>
               </PopoverTrigger>

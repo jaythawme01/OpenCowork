@@ -16,6 +16,7 @@ import { useTaskStore } from './task-store'
 import { usePlanStore } from './plan-store'
 import { useUIStore } from './ui-store'
 import { useProviderStore } from './provider-store'
+import { useSettingsStore } from './settings-store'
 
 export type SessionMode = 'chat' | 'clarify' | 'cowork' | 'code'
 
@@ -27,6 +28,8 @@ export interface Project {
   workingFolder?: string
   sshConnectionId?: string
   pluginId?: string
+  providerId?: string
+  modelId?: string
 }
 
 export interface Session {
@@ -860,6 +863,7 @@ export const useChatStore = create<ChatStore>()(
       const id = nanoid()
       const now = Date.now()
       const { activeProviderId, activeModelId } = useProviderStore.getState()
+      const { newSessionDefaultModel } = useSettingsStore.getState()
 
       let targetProjectId =
         projectId ??
@@ -874,6 +878,17 @@ export const useChatStore = create<ChatStore>()(
         targetProjectId = targetProject.id
       }
 
+      const sessionProviderId = targetProject?.providerId
+        ? targetProject.providerId
+        : newSessionDefaultModel?.useGlobalActiveModel
+          ? activeProviderId ?? undefined
+          : newSessionDefaultModel?.providerId ?? activeProviderId ?? undefined
+      const sessionModelId = targetProject?.providerId
+        ? targetProject.modelId
+        : newSessionDefaultModel?.useGlobalActiveModel
+          ? activeModelId || undefined
+          : newSessionDefaultModel?.modelId || activeModelId || undefined
+
       const newSession: Session = {
         id,
         title: 'New Conversation',
@@ -886,8 +901,8 @@ export const useChatStore = create<ChatStore>()(
         projectId: targetProjectId ?? undefined,
         workingFolder: targetProject?.workingFolder,
         sshConnectionId: targetProject?.sshConnectionId,
-        providerId: activeProviderId ?? undefined,
-        modelId: activeModelId || undefined
+        providerId: sessionProviderId,
+        modelId: sessionModelId
       }
       set((state) => {
         state.sessions.push(newSession)

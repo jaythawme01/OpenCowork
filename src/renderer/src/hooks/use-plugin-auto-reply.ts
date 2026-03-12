@@ -57,6 +57,20 @@ interface PluginAutoReplyTask {
 
 const PLUGIN_STREAM_DELTA_FLUSH_MS = 66
 
+function shouldReplaceSessionTitle(currentTitle: string | undefined, nextTitle: string | undefined): boolean {
+  const current = (currentTitle ?? '').trim()
+  const next = (nextTitle ?? '').trim()
+  if (!next || current === next) return false
+
+  return (
+    current.length === 0 ||
+    current === 'New Conversation' ||
+    current === 'New Chat' ||
+    /^oc_/i.test(current) ||
+    /^Plugin\s+/i.test(current)
+  )
+}
+
 async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
   const { sessionId, pluginId, pluginType, chatId, supportsStreaming } = task
 
@@ -79,12 +93,17 @@ async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
     return
   }
 
+  const shouldReplyToIncomingMessage =
+    pluginType === 'qq-bot' && task.chatType === 'group' && Boolean(task.messageId)
+
   const sendChannelNotice = async (message: string): Promise<void> => {
     try {
       await ipcClient.invoke(IPC.PLUGIN_EXEC, {
         pluginId,
-        action: 'sendMessage',
-        params: { chatId, content: message }
+        action: shouldReplyToIncomingMessage ? 'replyMessage' : 'sendMessage',
+        params: shouldReplyToIncomingMessage
+          ? { messageId: task.messageId, content: message }
+          : { chatId, content: message }
       })
     } catch (err) {
       console.error('[PluginAutoReply] Failed to send notice:', err)
@@ -277,7 +296,7 @@ async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
       if (dbSession) {
         const newSession = {
           id: sessionId,
-          title: dbSession.title || resolvedTitle,
+          title: shouldReplaceSessionTitle(dbSession.title, resolvedTitle) ? resolvedTitle : (dbSession.title || resolvedTitle),
           mode: (dbSession.mode as 'chat' | 'clarify' | 'cowork' | 'code') || 'cowork',
           messages: [],
           messageCount: 0,
@@ -356,7 +375,7 @@ async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
   }
 
   // Update session title in store if we have a better name now
-  if (session && /^oc_/.test(session.title) && resolvedTitle && !/^oc_/.test(resolvedTitle)) {
+  if (session && shouldReplaceSessionTitle(session.title, resolvedTitle)) {
     useChatStore.setState((state) => {
       const s = state.sessions.find((s) => s.id === sessionId)
       if (s) s.title = resolvedTitle
@@ -801,15 +820,19 @@ async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
     await sendChannelNotice(fallbackMessage)
   }
 
-  // Non-streaming fallback: send the final text via plugin sendMessage
+  // Non-streaming fallback: send the final text via plugin reply/send
   if (!streamingActive && fullText.trim()) {
     try {
       await ipcClient.invoke('plugin:exec', {
         pluginId,
-        action: 'sendMessage',
-        params: { chatId, content: fullText }
+        action: shouldReplyToIncomingMessage ? 'replyMessage' : 'sendMessage',
+        params: shouldReplyToIncomingMessage
+          ? { messageId: task.messageId, content: fullText }
+          : { chatId, content: fullText }
       })
-      console.log(`[PluginAutoReply] Sent non-streaming reply for ${pluginId}:${chatId}`)
+      console.log(
+        `[PluginAutoReply] Sent non-streaming ${shouldReplyToIncomingMessage ? 'reply' : 'message'} for ${pluginId}:${chatId}`
+      )
     } catch (err) {
       console.error('[PluginAutoReply] Failed to send non-streaming reply:', err)
     }

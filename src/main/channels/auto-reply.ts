@@ -12,6 +12,20 @@ import { tryHandleCommand } from './plugin-commands'
 const PLUGINS_WORK_DIR = path.join(os.homedir(), '.open-cowork', 'plugins')
 const PLUGINS_FILE = path.join(os.homedir(), '.open-cowork', 'plugins.json')
 
+function shouldReplaceSessionTitle(currentTitle: string | undefined, nextTitle: string | undefined): boolean {
+  const current = (currentTitle ?? '').trim()
+  const next = (nextTitle ?? '').trim()
+  if (!next || current === next) return false
+
+  return (
+    current.length === 0 ||
+    current === 'New Conversation' ||
+    current === 'New Chat' ||
+    /^oc_/i.test(current) ||
+    /^Plugin\s+/i.test(current)
+  )
+}
+
 let _pluginManager: ChannelManager | null = null
 
 /** Must be called once at startup to wire the plugin manager */
@@ -94,7 +108,7 @@ export function handleChannelAutoReply(event: ChannelEvent): void {
       }
 
       const betterTitle = data.chatName || data.senderName
-      if (betterTitle && session.title !== betterTitle && /^oc_/.test(session.title)) {
+      if (shouldReplaceSessionTitle(session.title, betterTitle)) {
         db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(betterTitle, session.id)
         session.title = betterTitle
       }

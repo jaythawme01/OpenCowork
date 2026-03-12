@@ -39,8 +39,6 @@
     "toolbarCollapsedByDefaultDesc": "默认不收起。新打开应用时按此状态初始化左侧工具栏。",
     "chinese": "中文",
     "english": "English",
-    "systemPrompt": "系统提示词",
-    "systemPromptDesc": "自定义指令，将追加到内置系统提示词之后",
     "systemPromptPlaceholder": "添加自定义指令...",
     "teamTools": "Team Tools",
     "teamToolsDesc": "启用 Agent Team 协作功能，允许 AI 创建和管理并行团队",
