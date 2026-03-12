@@ -20,6 +20,7 @@ let optimizer: any
 let is: any
 
 import icon from '../../resources/icon.png?asset'
+import icon_mac from '../../resources/icon-mac.png?asset'
 
 import { registerFsHandlers } from './ipc/fs-handlers'
 import { registerAgentChangeHandlers } from './ipc/agent-change-handlers'
@@ -124,14 +125,14 @@ function showMainWindow(): void {
 }
 
 function getTrayIcon() {
-  const image = nativeImage.createFromPath(icon)
-
   if (process.platform === 'darwin') {
+    const image = nativeImage.createFromPath(icon_mac)
     const resized = image.resize({ width: 18, height: 18 })
     resized.setTemplateImage(true)
     return resized
   }
 
+  const image = nativeImage.createFromPath(icon)
   return image
 }
 

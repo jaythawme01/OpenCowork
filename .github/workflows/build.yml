@@ -1,5 +1,8 @@
 name: Build & Release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   # 在 GitHub 上发布 Release 时自动触发构建
   release:
@@ -30,11 +33,12 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       release_body: ${{ steps.meta.outputs.release_body }}
       tag_name: ${{ steps.meta.outputs.tag_name }}
+      checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
       is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
       release_id: ${{ steps.meta.outputs.release_id }}
     steps:
       - name: Checkout (gh cli needs repo context)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Extract release metadata
         id: meta
@@ -52,6 +56,7 @@ jobs:
             VERSION="${RELEASE_TAG#v}"
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
             echo "tag_name=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+            echo "checkout_ref=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
             echo "is_prerelease=${RELEASE_PRERELEASE}" >> "$GITHUB_OUTPUT"
             echo "release_id=${RELEASE_ID}" >> "$GITHUB_OUTPUT"
 
@@ -63,6 +68,7 @@ jobs:
             TAG="v${INPUT_VERSION}"
             echo "version=${INPUT_VERSION}" >> "$GITHUB_OUTPUT"
             echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "checkout_ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
             echo "release_body=$(printf '%s' '手动触发构建' | base64 -w 0)" >> "$GITHUB_OUTPUT"
 
@@ -83,27 +89,75 @@ jobs:
           echo "🚀 Pre-release: ${{ steps.meta.outputs.is_prerelease }}"
 
   # ── 多平台构建 ──
-  build:
+  compile:
     needs: prepare
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Linux build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync version to package.json
+        run: npm version ${{ needs.prepare.outputs.version }} --no-git-tag-version --allow-same-version
+
+      - name: Build (electron-vite)
+        run: npx electron-vite build
+
+      - name: Upload compiled app
+        uses: actions/upload-artifact@v6
+        with:
+          name: open-cowork-build-output
+          path: out
+          if-no-files-found: error
+          retention-days: 30
+
+  build:
+    needs: [prepare, compile]
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             platform: win
+            build_arch: x64
+            artifact_arch: amd64
+          - os: windows-11-arm
+            platform: win
+            build_arch: arm64
+            artifact_arch: arm64
           - os: ubuntu-latest
             platform: linux
+            build_arch: x64
+            artifact_arch: amd64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            build_arch: arm64
+            artifact_arch: arm64
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
-          ref: ${{ needs.prepare.outputs.tag_name }}
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -120,72 +174,293 @@ jobs:
       - name: Sync version to package.json
         run: npm version ${{ needs.prepare.outputs.version }} --no-git-tag-version --allow-same-version
 
-      - name: Build (electron-vite)
-        run: npx electron-vite build
+      - name: Download compiled app
+        uses: actions/download-artifact@v6
+        with:
+          name: open-cowork-build-output
+          path: out
 
-      - name: Package (${{ matrix.platform }})
-        run: npx electron-builder --${{ matrix.platform }} --publish never
+      - name: Package (${{ matrix.platform }}-${{ matrix.artifact_arch }})
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.build_arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://cdn.npmmirror.com/binaries/electron-builder-binaries/
           # Windows 代码签名 (可选)
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD || '' }}
 
       # ── 上传构建产物 ──
 
+      - name: Prepare Windows artifacts
+        if: matrix.platform == 'win'
+        shell: bash
+        run: |
+          mkdir -p release-assets
+
+          exe_file=$(find dist -maxdepth 1 -type f -name '*.exe' ! -name '*.blockmap' | head -n 1)
+          blockmap_file=$(find dist -maxdepth 1 -type f -name '*.exe.blockmap' | head -n 1)
+
+          if [ -z "$exe_file" ]; then
+            echo "❌ No Windows installer artifact found"
+            exit 1
+          fi
+
+          cp "$exe_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}-setup.exe"
+
+          if [ -n "$blockmap_file" ]; then
+            cp "$blockmap_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}-setup.exe.blockmap"
+          fi
+
       - name: Upload Windows artifacts
         if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: open-cowork-windows
+          name: open-cowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}
           path: |
-            dist/*.exe
-            dist/*.exe.blockmap
+            release-assets/*.exe
+            release-assets/*.exe.blockmap
             dist/latest*.yml
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload Linux artifacts
-        if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: open-cowork-linux
-          path: |
-            dist/*.AppImage
-            dist/*.AppImage.zsync
-            dist/*.deb
-            dist/latest*.yml
-          if-no-files-found: error
-          retention-days: 30
-
-  # ── 上传产物到 Release ──
-  upload:
-    needs: [prepare, build]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout (gh cli needs repo context)
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: List artifacts
-        run: ls -lhR artifacts/
-
-      # 使用 gh cli 精确上传到触发的 Release
-      - name: Upload assets to Release
+      - name: Upload Windows assets to Release
+        if: matrix.platform == 'win'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          echo "📦 Uploading assets to Release: ${TAG_NAME}"
-          for file in artifacts/*; do
+          echo "📦 Uploading Windows assets to Release: ${TAG_NAME}"
+          for file in release-assets/*; do
             [ -f "$file" ] || continue
             echo "  ⬆️  $(basename "$file")"
             gh release upload "${TAG_NAME}" "$file" --clobber
           done
-          echo "✅ All assets uploaded successfully"
+
+          if [ "${{ matrix.artifact_arch }}" = "amd64" ]; then
+            for file in dist/latest*.yml; do
+              [ -f "$file" ] || continue
+              echo "  ⬆️  $(basename "$file")"
+              gh release upload "${TAG_NAME}" "$file" --clobber
+            done
+          fi
+
+      - name: Prepare Linux artifacts
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          mkdir -p release-assets
+
+          appimage_file=$(find dist -maxdepth 1 -type f -name '*.AppImage' | head -n 1)
+          zsync_file=$(find dist -maxdepth 1 -type f -name '*.AppImage.zsync' | head -n 1)
+          deb_file=$(find dist -maxdepth 1 -type f -name '*.deb' | head -n 1)
+
+          if [ -n "$appimage_file" ]; then
+            cp "$appimage_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.AppImage"
+          fi
+
+          if [ -n "$zsync_file" ]; then
+            cp "$zsync_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.AppImage.zsync"
+          fi
+
+          if [ -n "$deb_file" ]; then
+            cp "$deb_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.deb"
+          fi
+
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: open-cowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}
+          path: |
+            release-assets/*.AppImage
+            release-assets/*.AppImage.zsync
+            release-assets/*.deb
+            dist/latest*.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Linux assets to Release
+        if: matrix.platform == 'linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+        run: |
+          echo "📦 Uploading Linux assets to Release: ${TAG_NAME}"
+          for file in release-assets/*; do
+            [ -f "$file" ] || continue
+            echo "  ⬆️  $(basename "$file")"
+            gh release upload "${TAG_NAME}" "$file" --clobber
+          done
+
+          if [ "${{ matrix.artifact_arch }}" = "amd64" ]; then
+            for file in dist/latest*.yml; do
+              [ -f "$file" ] || continue
+              echo "  ⬆️  $(basename "$file")"
+              gh release upload "${TAG_NAME}" "$file" --clobber
+            done
+          fi
+
+  # ── macOS 构建（分别产出 Apple Silicon / Intel 安装包） ──
+  build-macos:
+    needs: [prepare, compile]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            build_arch: arm64
+            artifact_arch: arm64
+          - os: macos-15-intel
+            platform: mac
+            build_arch: x64
+            artifact_arch: amd64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 将 Release 版本号同步写入 package.json
+      - name: Sync version to package.json
+        run: npm version ${{ needs.prepare.outputs.version }} --no-git-tag-version --allow-same-version
+
+      - name: Download compiled app
+        uses: actions/download-artifact@v6
+        with:
+          name: open-cowork-build-output
+          path: out
+
+      - name: Package ${{ matrix.platform }}-${{ matrix.artifact_arch }}
+        run: npx electron-builder --mac dmg zip --${{ matrix.build_arch }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://cdn.npmmirror.com/binaries/electron-builder-binaries/
+          # 未配置 Apple 开发者证书时，显式关闭自动签名发现，避免构建因签名探测失败
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Prepare macOS artifacts
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          dmg_file=$(find dist -maxdepth 1 -type f -name '*.dmg' | head -n 1)
+          zip_file=$(find dist -maxdepth 1 -type f -name '*.zip' | head -n 1)
+          yml_file=$(find dist -maxdepth 1 -type f -name 'latest-mac.yml' | head -n 1)
+
+          if [ -z "$dmg_file" ]; then
+            echo "❌ No macOS dmg artifact found"
+            exit 1
+          fi
+
+          cp "$dmg_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.dmg"
+          echo "✅ Prepared $(basename "$dmg_file") -> OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.dmg"
+
+          if [ -z "$zip_file" ]; then
+            echo "❌ No macOS zip artifact found"
+            exit 1
+          fi
+
+          cp "$zip_file" "release-assets/OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.zip"
+          echo "✅ Prepared $(basename "$zip_file") -> OpenCowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}.zip"
+
+          if [ -z "$yml_file" ]; then
+            echo "❌ No macOS update metadata found"
+            exit 1
+          fi
+
+          cp "$yml_file" "release-assets/latest-mac-${{ matrix.artifact_arch }}.yml"
+          echo "✅ Prepared $(basename "$yml_file") -> latest-mac-${{ matrix.artifact_arch }}.yml"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: open-cowork-${{ matrix.platform }}-${{ matrix.artifact_arch }}
+          path: |
+            release-assets/*.dmg
+            release-assets/*.zip
+            release-assets/latest-mac-*.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload macOS assets to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+        run: |
+          echo "📦 Uploading macOS assets to Release: ${TAG_NAME}"
+          for file in release-assets/*; do
+            [ -f "$file" ] || continue
+            if [[ "$file" == *.yml ]]; then
+              continue
+            fi
+            echo "  ⬆️  $(basename "$file")"
+            gh release upload "${TAG_NAME}" "$file" --clobber
+          done
+
+  publish-macos-update-metadata:
+    needs: [prepare, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download macOS arm64 artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: open-cowork-mac-arm64
+          path: mac-arm64
+
+      - name: Download macOS amd64 artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: open-cowork-mac-amd64
+          path: mac-amd64
+
+      - name: Merge macOS update metadata
+        shell: bash
+        run: |
+          ruby <<'RUBY'
+          require 'yaml'
+
+          def read_update_info(path)
+            data = YAML.load_file(path) || {}
+            files = Array(data['files']).map { |item| item.is_a?(Hash) ? item.dup : {} }
+
+            if files.empty? && data['path']
+              fallback = { 'url' => data['path'] }
+              fallback['sha512'] = data['sha512'] if data['sha512']
+              fallback['size'] = data['size'] if data['size']
+              files << fallback
+            end
+
+            [data, files]
+          end
+
+          arm_data, arm_files = read_update_info('mac-arm64/latest-mac-arm64.yml')
+          amd_data, amd_files = read_update_info('mac-amd64/latest-mac-amd64.yml')
+
+          merged = arm_data.dup
+          merged['files'] = (arm_files + amd_files).uniq { |item| item['url'] }
+          merged['releaseDate'] ||= amd_data['releaseDate']
+          merged['path'] ||= arm_data['path'] || merged['files'].first&.fetch('url', nil)
+          merged['sha512'] ||= arm_data['sha512'] || merged['files'].find { |item| item['url'] == merged['path'] }&.fetch('sha512', nil)
+
+          File.write('latest-mac.yml', YAML.dump(merged))
+          RUBY
+
+      - name: Upload merged macOS update metadata to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+        run: gh release upload "${TAG_NAME}" latest-mac.yml --clobber

@@ -61,8 +61,17 @@ function getReleaseNotesText(releaseNotes: unknown): string {
 }
 
 function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error)
+  const message = error instanceof Error ? error.message : String(error)
+
+  if (/latest-mac\.yml/.test(message) && /\b404\b/.test(message)) {
+    return 'Current release is missing macOS update metadata (latest-mac.yml). Rebuild the release and upload the macOS zip/update metadata assets.'
+  }
+
+  if (/latest\.yml/.test(message) && /\b404\b/.test(message)) {
+    return 'Current release is missing update metadata (latest.yml). Rebuild the release and upload the updater metadata assets.'
+  }
+
+  return message
 }
 
 function normalizeVersion(version: string | null | undefined): string {
@@ -257,7 +266,7 @@ export function setupAutoUpdater(options: AutoUpdateOptions): void {
     console.log('[Updater] Running in development mode - using dev-app-update.yml')
   }
 
-  if (process.platform !== 'win32' && process.platform !== 'linux') {
+  if (process.platform !== 'win32' && process.platform !== 'linux' && process.platform !== 'darwin') {
     console.log(`[Updater] Skip update check on unsupported platform: ${process.platform}`)
     return
   }
