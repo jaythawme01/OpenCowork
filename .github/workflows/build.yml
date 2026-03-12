@@ -415,6 +415,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Download macOS arm64 artifacts
         uses: actions/download-artifact@v6
         with:
@@ -463,4 +466,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
-        run: gh release upload "${TAG_NAME}" latest-mac.yml --clobber
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${TAG_NAME}" latest-mac.yml --clobber --repo "${GH_REPO}"
