@@ -20,11 +20,21 @@ export const desktopScreenshotTool: ToolHandler = {
       'Capture a full desktop screenshot and return it to the agent. Use this before mouse or keyboard actions when the current screen state matters.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        delayMs: {
+          type: 'number',
+          description: 'Optional delay in milliseconds before capturing the screenshot.'
+        }
+      },
       additionalProperties: false
     }
   },
-  execute: async (_input, ctx): Promise<ToolResultContent> => {
+  execute: async (input, ctx): Promise<ToolResultContent> => {
+    const delayMs = Number(input.delayMs ?? 0)
+    if (Number.isFinite(delayMs) && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(delayMs, 5000)))
+    }
+
     const result = (await ctx.ipc.invoke(IPC.DESKTOP_SCREENSHOT_CAPTURE)) as DesktopScreenshotResult
 
     if (!result?.success || !result.data) {

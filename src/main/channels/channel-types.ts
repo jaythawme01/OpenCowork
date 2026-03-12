@@ -60,6 +60,8 @@ export interface ChannelInstance {
   providerId?: string | null
   /** Model override for this plugin's auto-reply agent (null = use global default) */
   model?: string | null
+  /** Prefer OpenAI Responses WebSocket transport for this channel when supported */
+  enableResponsesWebSocket?: boolean
   /** Feature toggles */
   features?: ChannelFeatures
   /** Security permissions (defaults applied if missing) */
@@ -141,7 +143,11 @@ export interface MessagingChannelService {
 
   // Streaming output (optional — override in services that support it)
   supportsStreaming?: boolean
-  sendStreamingMessage?(chatId: string, initialContent: string, replyToMessageId?: string): Promise<ChannelStreamingHandle>
+  sendStreamingMessage?(
+    chatId: string,
+    initialContent: string,
+    replyToMessageId?: string
+  ): Promise<ChannelStreamingHandle>
 }
 
 /** Factory function type — registered per provider */

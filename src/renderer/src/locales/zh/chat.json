@@ -164,12 +164,24 @@
       "DesktopType": {
         "title": "桌面输入"
       },
+      "DesktopScroll": {
+        "title": "桌面滚动"
+      },
+      "DesktopWait": {
+        "title": "桌面等待"
+      },
       "screenshot": {
         "summary": "{{width}} × {{height}}",
         "preview": "截图预览"
       },
       "click": {
         "summary": "{{action}} @ ({{x}}, {{y}})"
+      },
+      "scroll": {
+        "summary": "滚动 ({{scrollX}}, {{scrollY}})"
+      },
+      "wait": {
+        "summary": "等待 {{delayMs}}ms"
       },
       "type": {
         "summary": "模式：{{mode}}"

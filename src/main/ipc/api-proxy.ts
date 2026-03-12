@@ -1,7 +1,9 @@
-import { ipcMain, BrowserWindow, net } from 'electron'
+import { ipcMain, BrowserWindow, net, session } from 'electron'
 import * as https from 'https'
 import * as http from 'http'
 import { URL } from 'url'
+import { WebSocket } from 'ws'
+import { HttpsProxyAgent } from 'https-proxy-agent'
 
 interface APIStreamRequest {
   requestId: string
@@ -12,6 +14,7 @@ interface APIStreamRequest {
   useSystemProxy?: boolean
   providerId?: string
   providerBuiltinId?: string
+  transport?: 'http' | 'websocket'
 }
 
 function readTimeoutFromEnv(name: string, fallbackMs: number): number {
@@ -107,19 +110,19 @@ function extractCodexQuota(
     usedPercent: parseNumber(normalized['x-codex-primary-used-percent']),
     windowMinutes: parseNumber(normalized['x-codex-primary-window-minutes']),
     resetAt: normalized['x-codex-primary-reset-at'],
-    resetAfterSeconds: parseNumber(normalized['x-codex-primary-reset-after-seconds']),
+    resetAfterSeconds: parseNumber(normalized['x-codex-primary-reset-after-seconds'])
   }
   const secondary: CodexQuotaWindow = {
     usedPercent: parseNumber(normalized['x-codex-secondary-used-percent']),
     windowMinutes: parseNumber(normalized['x-codex-secondary-window-minutes']),
     resetAt: normalized['x-codex-secondary-reset-at'],
-    resetAfterSeconds: parseNumber(normalized['x-codex-secondary-reset-after-seconds']),
+    resetAfterSeconds: parseNumber(normalized['x-codex-secondary-reset-after-seconds'])
   }
 
   const credits = {
     hasCredits: parseBoolean(normalized['x-codex-credits-has-credits']),
     balance: parseNumber(normalized['x-codex-credits-balance']),
-    unlimited: parseBoolean(normalized['x-codex-credits-unlimited']),
+    unlimited: parseBoolean(normalized['x-codex-credits-unlimited'])
   }
 
   return {
@@ -131,7 +134,7 @@ function extractCodexQuota(
       normalized['x-codex-primary-over-secondary-limit-percent']
     ),
     credits: Object.values(credits).some((v) => v !== undefined) ? credits : undefined,
-    fetchedAt: Date.now(),
+    fetchedAt: Date.now()
   }
 }
 
@@ -149,7 +152,7 @@ function sendQuotaUpdate(
     url: req.url,
     providerId: req.providerId,
     providerBuiltinId: req.providerBuiltinId,
-    quota,
+    quota
   })
 }
 
@@ -158,7 +161,12 @@ function requestViaSystemProxy(args: {
   method: string
   headers: Record<string, string>
   body?: string
-}): Promise<{ statusCode?: number; error?: string; body?: string; headers?: Record<string, string | string[] | undefined> }> {
+}): Promise<{
+  statusCode?: number
+  error?: string
+  body?: string
+  headers?: Record<string, string | string[] | undefined>
+}> {
   const { url, method, headers, body } = args
   const requestUrl = url.trim()
   const bodyBuffer = body ? Buffer.from(body, 'utf-8') : null
@@ -167,7 +175,12 @@ function requestViaSystemProxy(args: {
   return new Promise((resolve) => {
     let done = false
     let timeout: ReturnType<typeof setTimeout> | null = null
-    const finish = (payload: { statusCode?: number; error?: string; body?: string; headers?: Record<string, string | string[] | undefined> }): void => {
+    const finish = (payload: {
+      statusCode?: number
+      error?: string
+      body?: string
+      headers?: Record<string, string | string[] | undefined>
+    }): void => {
       if (done) return
       done = true
       if (timeout) {
@@ -184,9 +197,15 @@ function requestViaSystemProxy(args: {
 
     httpReq.on('response', (res) => {
       let responseBody = ''
-      res.on('data', (chunk: Buffer) => { responseBody += chunk.toString() })
+      res.on('data', (chunk: Buffer) => {
+        responseBody += chunk.toString()
+      })
       res.on('end', () => {
-        finish({ statusCode: res.statusCode, body: responseBody, headers: res.headers as Record<string, string | string[] | undefined> })
+        finish({
+          statusCode: res.statusCode,
+          body: responseBody,
+          headers: res.headers as Record<string, string | string[] | undefined>
+        })
       })
     })
 
@@ -204,6 +223,210 @@ function requestViaSystemProxy(args: {
   })
 }
 
+function toWebSocketUrl(url: string): string {
+  const parsed = new URL(url)
+  parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
+  return parsed.toString()
+}
+
+function encodeSseEvent(eventType: string, payload: unknown): string {
+  return `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`
+}
+
+function parseProxyResult(
+  result: string
+): string | null {
+  const s = result.trim().toUpperCase()
+  if (!s || s === 'DIRECT') return null
+  const m = s.match(/^(?:PROXY|HTTPS)\s+([^\s]+)$/i)
+  if (!m) return null
+  const hostPort = m[1].trim()
+  if (!hostPort) return null
+  return hostPort.startsWith('http') ? hostPort : `http://${hostPort}`
+}
+
+async function streamViaResponsesWebSocket(
+  event: Electron.IpcMainEvent,
+  req: APIStreamRequest
+): Promise<void> {
+  const { requestId, url, headers, body, useSystemProxy } = req
+  const sender = getSender(event)
+  if (!sender) return
+
+  let requestBody: Record<string, unknown>
+  try {
+    requestBody = body ? (JSON.parse(body) as Record<string, unknown>) : {}
+  } catch {
+    sender.send('api:stream-error', {
+      requestId,
+      error: 'Invalid WebSocket request body'
+    })
+    return
+  }
+
+  delete requestBody.stream
+  delete requestBody.background
+
+  const wsUrl = toWebSocketUrl(url)
+  const wsHeaders = sanitizeHeaders({ ...headers })
+  delete wsHeaders['Content-Type']
+  delete wsHeaders['content-type']
+
+  let agent: InstanceType<typeof HttpsProxyAgent> | undefined
+  if (useSystemProxy) {
+    try {
+      const result = await session.defaultSession.resolveProxy(wsUrl)
+      const proxyUrl = parseProxyResult(result)
+      if (proxyUrl) {
+        agent = new HttpsProxyAgent(proxyUrl)
+      }
+    } catch (err) {
+      console.warn('[API Proxy] WebSocket resolveProxy failed, connecting direct:', err)
+    }
+  }
+
+  const CONNECTION_TIMEOUT = readTimeoutFromEnv('OPENCOWORK_API_CONNECTION_TIMEOUT_MS', 30_000)
+  const IDLE_TIMEOUT = readTimeoutFromEnv('OPENCOWORK_API_IDLE_TIMEOUT_MS', 300_000)
+
+  let settled = false
+  let finished = false
+  let aborted = false
+  let connectionTimer: ReturnType<typeof setTimeout> | null = null
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+  const clearTimers = (): void => {
+    if (connectionTimer) {
+      clearTimeout(connectionTimer)
+      connectionTimer = null
+    }
+    if (idleTimer) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+    }
+  }
+
+  let socket: WebSocket
+  const resetIdleTimer = (): void => {
+    if (IDLE_TIMEOUT <= 0 || settled) return
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => {
+      socket.close(4000, 'idle timeout')
+    }, IDLE_TIMEOUT)
+  }
+
+  const complete = (): void => {
+    if (settled) return
+    settled = true
+    clearTimers()
+    sender.send('api:stream-end', { requestId })
+  }
+
+  const fail = (message: string): void => {
+    if (settled) return
+    settled = true
+    clearTimers()
+    sender.send('api:stream-error', {
+      requestId,
+      error: message
+    })
+  }
+
+  socket = new WebSocket(wsUrl, {
+    headers: wsHeaders,
+    handshakeTimeout: CONNECTION_TIMEOUT,
+    perMessageDeflate: false,
+    ...(agent ? { agent } : {})
+  })
+
+  if (CONNECTION_TIMEOUT > 0) {
+    connectionTimer = setTimeout(() => {
+      socket.close(4000, 'connection timeout')
+    }, CONNECTION_TIMEOUT)
+  }
+
+  socket.on('open', () => {
+    if (connectionTimer) {
+      clearTimeout(connectionTimer)
+      connectionTimer = null
+    }
+    resetIdleTimer()
+    socket.send(
+      JSON.stringify({
+        type: 'response.create',
+        ...requestBody
+      }),
+      (err) => {
+        if (err) {
+          fail(err.message)
+        }
+      }
+    )
+  })
+
+  socket.on('message', (raw) => {
+    resetIdleTimer()
+    let payload: unknown
+    try {
+      payload = JSON.parse(raw.toString())
+    } catch {
+      return
+    }
+
+    const eventType =
+      typeof payload === 'object' &&
+      payload !== null &&
+      'type' in payload &&
+      typeof (payload as { type?: unknown }).type === 'string'
+        ? (payload as { type: string }).type
+        : 'message'
+
+    sender.send('api:stream-chunk', {
+      requestId,
+      data: encodeSseEvent(eventType, payload)
+    })
+
+    if (
+      eventType === 'response.completed' ||
+      eventType === 'response.failed' ||
+      eventType === 'response.incomplete' ||
+      eventType === 'response.cancelled' ||
+      eventType === 'error'
+    ) {
+      finished = true
+      socket.close()
+    }
+  })
+
+  socket.on('unexpected-response', (_request, response) => {
+    fail(`WebSocket handshake failed: HTTP ${response.statusCode ?? 0}`)
+  })
+
+  socket.on('error', (err) => {
+    if (aborted) return
+    fail(err.message)
+  })
+
+  socket.on('close', (code, reason) => {
+    clearTimers()
+    ipcMain.removeListener('api:abort', abortHandler)
+    if (settled) return
+    if (aborted || finished) {
+      complete()
+      return
+    }
+    const reasonText = reason.toString().trim()
+    fail(`WebSocket closed (${code})${reasonText ? `: ${reasonText}` : ''}`)
+  })
+
+  const abortHandler = (_event: Electron.IpcMainEvent, data: { requestId: string }): void => {
+    if (data.requestId !== requestId) return
+    aborted = true
+    socket.close()
+  }
+
+  ipcMain.on('api:abort', abortHandler)
+}
+
 export function registerApiProxyHandlers(): void {
   // Handle non-streaming API requests (e.g., test connection)
   ipcMain.handle('api:request', async (event, req: Omit<APIStreamRequest, 'requestId'>) => {
@@ -219,7 +442,7 @@ export function registerApiProxyHandlers(): void {
               url,
               providerId,
               providerBuiltinId,
-              quota,
+              quota
             })
           }
         }
@@ -241,21 +464,25 @@ export function registerApiProxyHandlers(): void {
           port: parsedUrl.port || (isHttps ? 443 : 80),
           path: parsedUrl.pathname + parsedUrl.search,
           method,
-          headers: reqHeaders,
+          headers: reqHeaders
         }
 
         const httpReq = httpModule.request(options, (res) => {
           let responseBody = ''
-          res.on('data', (chunk: Buffer) => { responseBody += chunk.toString() })
+          res.on('data', (chunk: Buffer) => {
+            responseBody += chunk.toString()
+          })
           res.on('end', () => {
             if (providerId || providerBuiltinId) {
-              const quota = extractCodexQuota(res.headers as Record<string, string | string[] | undefined>)
+              const quota = extractCodexQuota(
+                res.headers as Record<string, string | string[] | undefined>
+              )
               if (quota && event.sender) {
                 event.sender.send('api:quota-update', {
                   url,
                   providerId,
                   providerBuiltinId,
-                  quota,
+                  quota
                 })
               }
             }
@@ -285,10 +512,26 @@ export function registerApiProxyHandlers(): void {
 
   // Handle streaming API requests from renderer
   ipcMain.on('api:stream-request', (event, req: APIStreamRequest) => {
-    const { requestId, url, method, headers, body, useSystemProxy, providerId, providerBuiltinId } = req
+    const {
+      requestId,
+      url,
+      method,
+      headers,
+      body,
+      useSystemProxy,
+      providerId,
+      providerBuiltinId,
+      transport
+    } = req
 
     try {
       console.log(`[API Proxy] stream-request[${requestId}] ${method} ${url}`)
+      if (transport === 'websocket') {
+        void streamViaResponsesWebSocket(event, req).catch((err) => {
+          console.error('[API Proxy] WebSocket stream error:', err)
+        })
+        return
+      }
       if (useSystemProxy) {
         const requestUrl = url.trim()
         const bodyBuffer = body ? Buffer.from(body, 'utf-8') : null
@@ -301,14 +544,14 @@ export function registerApiProxyHandlers(): void {
           'OPENCOWORK_API_CONNECTION_TIMEOUT_MS',
           180_000
         )
-        const IDLE_TIMEOUT = readTimeoutFromEnv(
-          'OPENCOWORK_API_IDLE_TIMEOUT_MS',
-          300_000
-        )
+        const IDLE_TIMEOUT = readTimeoutFromEnv('OPENCOWORK_API_IDLE_TIMEOUT_MS', 300_000)
         let idleTimer: ReturnType<typeof setTimeout> | null = null
 
         const clearIdleTimer = (): void => {
-          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+          if (idleTimer) {
+            clearTimeout(idleTimer)
+            idleTimer = null
+          }
         }
 
         const resetIdleTimer = (req: Electron.ClientRequest): void => {
@@ -350,12 +593,14 @@ export function registerApiProxyHandlers(): void {
               if (errorBody.length < 4000) errorBody += chunk.toString()
             })
             res.on('end', () => {
-              console.error(`[API Proxy] stream-request[${requestId}] HTTP ${statusCode}: ${errorBody.slice(0, 500)}`)
+              console.error(
+                `[API Proxy] stream-request[${requestId}] HTTP ${statusCode}: ${errorBody.slice(0, 500)}`
+              )
               const sender = getSender(event)
               if (sender) {
                 sender.send('api:stream-error', {
                   requestId,
-                  error: `HTTP ${statusCode}: ${errorBody.slice(0, 2000)}`,
+                  error: `HTTP ${statusCode}: ${errorBody.slice(0, 2000)}`
                 })
               }
             })
@@ -369,7 +614,7 @@ export function registerApiProxyHandlers(): void {
             if (sender) {
               sender.send('api:stream-chunk', {
                 requestId,
-                data: chunk.toString(),
+                data: chunk.toString()
               })
             }
           })
@@ -389,7 +634,7 @@ export function registerApiProxyHandlers(): void {
             if (sender) {
               sender.send('api:stream-error', {
                 requestId,
-                error: err.message,
+                error: err.message
               })
             }
           })
@@ -398,7 +643,9 @@ export function registerApiProxyHandlers(): void {
         // Connection timeout: abort if the server doesn't respond at all
         if (CONNECTION_TIMEOUT > 0) {
           connectionTimer = setTimeout(() => {
-            console.warn(`[API Proxy] Connection timeout (${CONNECTION_TIMEOUT}ms) for ${requestId}`)
+            console.warn(
+              `[API Proxy] Connection timeout (${CONNECTION_TIMEOUT}ms) for ${requestId}`
+            )
             cancelNetRequest(httpReq)
             const sender = getSender(event)
             if (sender) {
@@ -418,13 +665,13 @@ export function registerApiProxyHandlers(): void {
           if (sender) {
             sender.send('api:stream-error', {
               requestId,
-              error: err.message,
+              error: err.message
             })
           }
         })
 
         // Handle abort from renderer
-        const abortHandler = (_event: Electron.IpcMainEvent, data: { requestId: string }) => {
+        const abortHandler = (_event: Electron.IpcMainEvent, data: { requestId: string }): void => {
           if (data.requestId === requestId) {
             clearConnectionTimer()
             clearIdleTimer()
@@ -462,24 +709,21 @@ export function registerApiProxyHandlers(): void {
         port: parsedUrl.port || (isHttps ? 443 : 80),
         path: parsedUrl.pathname + parsedUrl.search,
         method,
-        headers: reqHeaders,
+        headers: reqHeaders
       }
 
       // Timeouts (ms):
       // - Connection: max wait for the server to start responding (first byte)
       // - Idle: max gap between consecutive data chunks during streaming
-      const CONNECTION_TIMEOUT = readTimeoutFromEnv(
-        'OPENCOWORK_API_CONNECTION_TIMEOUT_MS',
-        180_000
-      )
-      const IDLE_TIMEOUT = readTimeoutFromEnv(
-        'OPENCOWORK_API_IDLE_TIMEOUT_MS',
-        300_000
-      )
+      const CONNECTION_TIMEOUT = readTimeoutFromEnv('OPENCOWORK_API_CONNECTION_TIMEOUT_MS', 180_000)
+      const IDLE_TIMEOUT = readTimeoutFromEnv('OPENCOWORK_API_IDLE_TIMEOUT_MS', 300_000)
       let idleTimer: ReturnType<typeof setTimeout> | null = null
 
       const clearIdleTimer = (): void => {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+        if (idleTimer) {
+          clearTimeout(idleTimer)
+          idleTimer = null
+        }
       }
 
       const resetIdleTimer = (req: http.ClientRequest): void => {
@@ -493,11 +737,7 @@ export function registerApiProxyHandlers(): void {
 
       const httpReq = httpModule.request(options, (res) => {
         const statusCode = res.statusCode || 0
-        sendQuotaUpdate(
-          event,
-          { requestId, url, providerId, providerBuiltinId },
-          res.headers ?? {}
-        )
+        sendQuotaUpdate(event, { requestId, url, providerId, providerBuiltinId }, res.headers ?? {})
 
         // For non-2xx, collect full body and send as error
         if (statusCode < 200 || statusCode >= 300) {
@@ -507,12 +747,14 @@ export function registerApiProxyHandlers(): void {
             if (errorBody.length < 4000) errorBody += chunk.toString()
           })
           res.on('end', () => {
-            console.error(`[API Proxy] stream-request[${requestId}] HTTP ${statusCode}: ${errorBody.slice(0, 500)}`)
+            console.error(
+              `[API Proxy] stream-request[${requestId}] HTTP ${statusCode}: ${errorBody.slice(0, 500)}`
+            )
             const sender = getSender(event)
             if (sender) {
               sender.send('api:stream-error', {
                 requestId,
-                error: `HTTP ${statusCode}: ${errorBody.slice(0, 2000)}`,
+                error: `HTTP ${statusCode}: ${errorBody.slice(0, 2000)}`
               })
             }
           })
@@ -526,7 +768,7 @@ export function registerApiProxyHandlers(): void {
           if (sender) {
             sender.send('api:stream-chunk', {
               requestId,
-              data: chunk.toString(),
+              data: chunk.toString()
             })
           }
         })
@@ -546,7 +788,7 @@ export function registerApiProxyHandlers(): void {
           if (sender) {
             sender.send('api:stream-error', {
               requestId,
-              error: err.message,
+              error: err.message
             })
           }
         })
@@ -567,13 +809,13 @@ export function registerApiProxyHandlers(): void {
         if (sender) {
           sender.send('api:stream-error', {
             requestId,
-            error: err.message,
+            error: err.message
           })
         }
       })
 
       // Handle abort from renderer
-      const abortHandler = (_event: Electron.IpcMainEvent, data: { requestId: string }) => {
+      const abortHandler = (_event: Electron.IpcMainEvent, data: { requestId: string }): void => {
         if (data.requestId === requestId) {
           clearIdleTimer()
           httpReq.destroy()
@@ -599,7 +841,7 @@ export function registerApiProxyHandlers(): void {
       if (sender) {
         sender.send('api:stream-error', {
           requestId,
-          error: errMsg,
+          error: errMsg
         })
       }
     }

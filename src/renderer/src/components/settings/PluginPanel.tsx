@@ -66,6 +66,10 @@ function ChannelIcon({
 // ─── Channel Config Panel (right side) ───
 
 function ChannelConfigPanel({ plugin }: { plugin: PluginInstance }): React.JSX.Element {
+  return <ChannelConfigPanelContent key={plugin.id} plugin={plugin} />
+}
+
+function ChannelConfigPanelContent({ plugin }: { plugin: PluginInstance }): React.JSX.Element {
   const { t } = useTranslation('settings')
   const updateChannel = useChannelStore((s) => s.updateChannel)
   const removeChannel = useChannelStore((s) => s.removeChannel)
@@ -97,7 +101,11 @@ function ChannelConfigPanel({ plugin }: { plugin: PluginInstance }): React.JSX.E
 
   const [localName, setLocalName] = useState(plugin.name)
   const [localConfig, setLocalConfig] = useState(plugin.config)
+  const [localProviderId, setLocalProviderId] = useState(plugin.providerId ?? null)
   const [localModel, setLocalModel] = useState(plugin.model ?? '')
+  const [localEnableResponsesWebSocket, setLocalEnableResponsesWebSocket] = useState(
+    plugin.enableResponsesWebSocket ?? false
+  )
   const [localFeatures, setLocalFeatures] = useState<PluginFeatures>(
     plugin.features ?? { autoReply: true, streamingReply: true, autoStart: true }
   )
@@ -106,17 +114,6 @@ function ChannelConfigPanel({ plugin }: { plugin: PluginInstance }): React.JSX.E
     plugin.permissions ?? DEFAULT_PLUGIN_PERMISSIONS
   )
   const [newReadPath, setNewReadPath] = useState('')
-
-  // Reset local state when selected plugin changes
-  useEffect(() => {
-    setLocalName(plugin.name)
-    setLocalConfig(plugin.config)
-    setLocalModel(plugin.model ?? '')
-    setLocalFeatures(plugin.features ?? { autoReply: true, streamingReply: true, autoStart: true })
-    setLocalTools(plugin.tools ?? {})
-    setLocalPerms(plugin.permissions ?? DEFAULT_PLUGIN_PERMISSIONS)
-    setNewReadPath('')
-  }, [plugin.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh status on mount
   useEffect(() => {
@@ -153,6 +150,7 @@ function ChannelConfigPanel({ plugin }: { plugin: PluginInstance }): React.JSX.E
   const handleModelChange = (value: string, providerId?: string): void => {
     const model = value === '__default__' ? null : value
     const pid = value === '__default__' ? null : (providerId ?? null)
+    setLocalProviderId(pid)
     setLocalModel(value === '__default__' ? '' : value)
     debouncedSave({ model, providerId: pid })
   }
@@ -201,6 +199,18 @@ function ChannelConfigPanel({ plugin }: { plugin: PluginInstance }): React.JSX.E
   }
 
   const configFields = descriptor?.configSchema ?? []
+  const effectiveProviderId = localModel ? localProviderId : activeProviderId
+  const effectiveModelId = localModel || activeModelId
+  const effectiveProvider = useMemo(
+    () => providers.find((provider) => provider.id === effectiveProviderId) ?? null,
+    [providers, effectiveProviderId]
+  )
+  const effectiveModel = useMemo(
+    () => effectiveProvider?.models.find((model) => model.id === effectiveModelId) ?? null,
+    [effectiveProvider, effectiveModelId]
+  )
+  const effectiveRequestType = effectiveModel?.type ?? effectiveProvider?.type
+  const supportsResponsesWebSocket = effectiveRequestType === 'openai-responses'
   const toolDefinitions = useMemo(() => {
     return PLUGIN_TOOL_DEFINITIONS.reduce<Record<string, string>>((acc, tool) => {
       acc[tool.name] = tool.description
@@ -338,7 +348,7 @@ function ChannelConfigPanel({ plugin }: { plugin: PluginInstance }): React.JSX.E
                     {provider.name}
                   </div>
                   {models.map((m) => {
-                    const isActive = localModel === m.id
+                    const isActive = localModel === m.id && localProviderId === provider.id
                     return (
                       <button
                         key={m.id}
@@ -378,6 +388,31 @@ function ChannelConfigPanel({ plugin }: { plugin: PluginInstance }): React.JSX.E
           )}
         </p>
       </section>
+
+      {supportsResponsesWebSocket && (
+        <section className="space-y-2 mb-4">
+          <label className="text-xs font-medium">Responses WebSocket</label>
+          <div className="rounded-md border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs">启用渠道 Responses WebSocket</p>
+                <p className="text-[10px] text-muted-foreground">
+                  当前渠道绑定的是 OpenAI Responses 模型。启用后优先走 WebSocket，失败时自动回退
+                  HTTP。
+                </p>
+              </div>
+              <Switch
+                checked={localEnableResponsesWebSocket}
+                onCheckedChange={(value) => {
+                  setLocalEnableResponsesWebSocket(value)
+                  debouncedSave({ enableResponsesWebSocket: value })
+                }}
+                className="scale-75"
+              />
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Feature toggles */}
       <section className="space-y-2 mb-4">

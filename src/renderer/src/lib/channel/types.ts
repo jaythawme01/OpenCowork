@@ -40,7 +40,7 @@ export const DEFAULT_PLUGIN_PERMISSIONS: PluginPermissions = {
   readablePathPrefixes: [],
   allowWriteOutside: false,
   allowShell: false,
-  allowSubAgents: true,
+  allowSubAgents: true
 }
 
 export interface PluginInstance {
@@ -57,6 +57,8 @@ export interface PluginInstance {
   providerId?: string | null
   /** Model override for this plugin's auto-reply agent (null = use global default) */
   model?: string | null
+  /** Prefer OpenAI Responses WebSocket transport for this channel when supported */
+  enableResponsesWebSocket?: boolean
   /** Feature toggles */
   features?: PluginFeatures
   /** Security permissions (defaults applied if missing) */

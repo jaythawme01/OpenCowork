@@ -9,7 +9,11 @@ import { CHANNEL_PROVIDERS } from '../channels/channel-descriptors'
 import { getDb } from '../db/database'
 import * as projectsDao from '../db/projects-dao'
 import { handleChannelAutoReply } from '../channels/auto-reply'
-import type { ChannelInstance, ChannelEvent, ChannelProviderDescriptor } from '../channels/channel-types'
+import type {
+  ChannelInstance,
+  ChannelEvent,
+  ChannelProviderDescriptor
+} from '../channels/channel-types'
 
 const DATA_DIR = path.join(os.homedir(), '.open-cowork')
 const PLUGINS_FILE = path.join(DATA_DIR, 'plugins.json')
@@ -119,7 +123,8 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
           builtin: true,
           config,
           createdAt: Date.now(),
-          tools: buildToolsMap(descriptor),
+          enableResponsesWebSocket: false,
+          tools: buildToolsMap(descriptor)
         })
         changed = true
       } else if (!existing.builtin) {
@@ -161,13 +166,18 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
             'tools',
             'providerId',
             'model',
+            'enableResponsesWebSocket',
             'features',
             'permissions'
           ].includes(key)
         ) {
-          delete ((p as unknown) as Record<string, unknown>)[key]
+          delete (p as unknown as Record<string, unknown>)[key]
           changed = true
         }
+      }
+      if (typeof p.enableResponsesWebSocket !== 'boolean') {
+        p.enableResponsesWebSocket = false
+        changed = true
       }
       // Ensure tools map matches descriptor
       const nextTools = buildToolsMap(desc, p.tools)
@@ -178,7 +188,9 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
     }
 
     if (changed) writePlugins(plugins)
-    console.log(`[Channels] Loaded ${plugins.length} channels (${plugins.filter((p) => p.builtin).length} built-in)`)
+    console.log(
+      `[Channels] Loaded ${plugins.length} channels (${plugins.filter((p) => p.builtin).length} built-in)`
+    )
     return plugins
   })
 
@@ -189,7 +201,7 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
     const nextTools = buildToolsMap(desc, instance.tools)
     plugins.push({
       ...instance,
-      ...(nextTools ? { tools: nextTools } : {}),
+      ...(nextTools ? { tools: nextTools } : {})
     })
     writePlugins(plugins)
     return { success: true }
@@ -214,8 +226,11 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
           const db = getDb()
           const providerId = next.providerId ?? null
           const modelId = providerId ? (next.model ?? null) : null
-          db.prepare('UPDATE sessions SET provider_id = ?, model_id = ? WHERE plugin_id = ?')
-            .run(providerId, modelId, id)
+          db.prepare('UPDATE sessions SET provider_id = ?, model_id = ? WHERE plugin_id = ?').run(
+            providerId,
+            modelId,
+            id
+          )
         } catch (err) {
           console.error('[Channels] Failed to sync channel session model:', err)
         }
@@ -239,9 +254,9 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
     // Cascade-delete plugin sessions and their messages
     try {
       const db = getDb()
-      const sessionIds = db
-        .prepare('SELECT id FROM sessions WHERE plugin_id = ?')
-        .all(id) as { id: string }[]
+      const sessionIds = db.prepare('SELECT id FROM sessions WHERE plugin_id = ?').all(id) as {
+        id: string
+      }[]
       if (sessionIds.length > 0) {
         const ids = sessionIds.map((s) => s.id)
         for (const sid of ids) {
@@ -287,7 +302,11 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
     'plugin:exec',
     async (
       _event,
-      { pluginId, action, params }: { pluginId: string; action: string; params: Record<string, unknown> }
+      {
+        pluginId,
+        action,
+        params
+      }: { pluginId: string; action: string; params: Record<string, unknown> }
     ) => {
       const service = channelManager.getService(pluginId)
       if (!service) {
@@ -301,21 +320,12 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
             sendWakeupMessage?: (chatId: string, content: string) => Promise<{ messageId: string }>
           }
           if (params.isWakeup === true && typeof target.sendWakeupMessage === 'function') {
-            return await target.sendWakeupMessage(
-              params.chatId as string,
-              params.content as string
-            )
+            return await target.sendWakeupMessage(params.chatId as string, params.content as string)
           }
-          return await service.sendMessage(
-            params.chatId as string,
-            params.content as string
-          )
+          return await service.sendMessage(params.chatId as string, params.content as string)
         }
         case 'replyMessage':
-          return await service.replyMessage(
-            params.messageId as string,
-            params.content as string
-          )
+          return await service.replyMessage(params.messageId as string, params.content as string)
         case 'getGroupMessages':
           return await service.getGroupMessages(
             params.chatId as string,
@@ -376,15 +386,19 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   // Find a plugin session by external chat ID
   ipcMain.handle('plugin:sessions:find-by-chat', (_event, externalChatId: string) => {
     const db = getDb()
-    return db
-      .prepare('SELECT * FROM sessions WHERE external_chat_id = ? LIMIT 1')
-      .get(externalChatId) ?? null
+    return (
+      db.prepare('SELECT * FROM sessions WHERE external_chat_id = ? LIMIT 1').get(externalChatId) ??
+      null
+    )
   })
 
   // ── Streaming output IPC ──
 
   // Active streaming handles keyed by `${pluginId}:${chatId}`
-  const streamHandles = new Map<string, import('../channels/channel-types').ChannelStreamingHandle>()
+  const streamHandles = new Map<
+    string,
+    import('../channels/channel-types').ChannelStreamingHandle
+  >()
 
   /**
    * Start a streaming message for a plugin chat.
@@ -403,7 +417,11 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
       }
 
       try {
-        const handle = await service.sendStreamingMessage(args.chatId, args.initialContent, args.messageId)
+        const handle = await service.sendStreamingMessage(
+          args.chatId,
+          args.initialContent,
+          args.messageId
+        )
         const key = `${args.pluginId}:${args.chatId}`
         streamHandles.set(key, handle)
         console.log(`[PluginStream] Started streaming for ${key}`)
@@ -420,26 +438,33 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   /** List all plugin sessions (sessions with plugin_id set) */
   ipcMain.handle('plugin:sessions:list-all', async () => {
     const db = getDb()
-    const rows = db.prepare(
-      `SELECT s.id, s.title, s.plugin_id, s.external_chat_id, s.created_at, s.updated_at,
+    const rows = db
+      .prepare(
+        `SELECT s.id, s.title, s.plugin_id, s.external_chat_id, s.created_at, s.updated_at,
               (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) as message_count
        FROM sessions s WHERE s.plugin_id IS NOT NULL AND s.plugin_id != ''
        ORDER BY s.updated_at DESC`
-    ).all()
+      )
+      .all()
     return rows
   })
 
   /** Get messages for a plugin session */
-  ipcMain.handle('plugin:sessions:messages', async (_event, args: { sessionId: string; limit?: number; offset?: number }) => {
-    const db = getDb()
-    const limit = args.limit ?? 50
-    const offset = args.offset ?? 0
-    const rows = db.prepare(
-      `SELECT id, role, content, created_at FROM messages
+  ipcMain.handle(
+    'plugin:sessions:messages',
+    async (_event, args: { sessionId: string; limit?: number; offset?: number }) => {
+      const db = getDb()
+      const limit = args.limit ?? 50
+      const offset = args.offset ?? 0
+      const rows = db
+        .prepare(
+          `SELECT id, role, content, created_at FROM messages
        WHERE session_id = ? ORDER BY sort_order ASC LIMIT ? OFFSET ?`
-    ).all(args.sessionId, limit, offset)
-    return rows
-  })
+        )
+        .all(args.sessionId, limit, offset)
+      return rows
+    }
+  )
 
   /** Clear all messages in a plugin session */
   ipcMain.handle('plugin:sessions:clear', async (_event, args: { sessionId: string }) => {
@@ -462,11 +487,14 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   })
 
   /** Rename a plugin session */
-  ipcMain.handle('plugin:sessions:rename', async (_event, args: { sessionId: string; title: string }) => {
-    const db = getDb()
-    db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(args.title, args.sessionId)
-    return { ok: true }
-  })
+  ipcMain.handle(
+    'plugin:sessions:rename',
+    async (_event, args: { sessionId: string; title: string }) => {
+      const db = getDb()
+      db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(args.title, args.sessionId)
+      return { ok: true }
+    }
+  )
 
   // ── Feishu media send ──
 
@@ -479,7 +507,9 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   ipcMain.handle(
     'plugin:feishu:send-image',
     async (_event, args: { pluginId: string; chatId: string; filePath: string }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
 
       try {
@@ -521,8 +551,13 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
    */
   ipcMain.handle(
     'plugin:feishu:send-file',
-    async (_event, args: { pluginId: string; chatId: string; filePath: string; fileType?: string }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: { pluginId: string; chatId: string; filePath: string; fileType?: string }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
 
       try {
@@ -545,20 +580,38 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
         // Auto-detect file type from extension
         const ext = path.extname(fileName).toLowerCase().replace('.', '')
         const typeMap: Record<string, 'opus' | 'mp4' | 'pdf' | 'doc' | 'xls' | 'ppt' | 'stream'> = {
-          opus: 'opus', mp4: 'mp4', pdf: 'pdf',
-          doc: 'doc', docx: 'doc',
-          xls: 'xls', xlsx: 'xls',
-          ppt: 'ppt', pptx: 'ppt',
+          opus: 'opus',
+          mp4: 'mp4',
+          pdf: 'pdf',
+          doc: 'doc',
+          docx: 'doc',
+          xls: 'xls',
+          xlsx: 'xls',
+          ppt: 'ppt',
+          pptx: 'ppt'
         }
-        const fileType = (args.fileType as 'opus' | 'mp4' | 'pdf' | 'doc' | 'xls' | 'ppt' | 'stream' | undefined)
-          ?? typeMap[ext]
-          ?? 'stream'
+        const fileType =
+          (args.fileType as
+            | 'opus'
+            | 'mp4'
+            | 'pdf'
+            | 'doc'
+            | 'xls'
+            | 'ppt'
+            | 'stream'
+            | undefined) ??
+          typeMap[ext] ??
+          'stream'
 
-        console.log(`[Feishu] Uploading file "${fileName}" (${buf.byteLength} bytes, type=${fileType})...`)
+        console.log(
+          `[Feishu] Uploading file "${fileName}" (${buf.byteLength} bytes, type=${fileType})...`
+        )
         const fileKey = await service.api.uploadFile(buf, fileName, fileType)
         console.log(`[Feishu] Uploaded file_key=${fileKey}, sending to chat...`)
         const result = await service.api.sendFileMessage(args.chatId, fileKey)
-        console.log(`[Feishu] Sent file "${fileName}" to ${args.chatId}: messageId=${result.messageId}`)
+        console.log(
+          `[Feishu] Sent file "${fileName}" to ${args.chatId}: messageId=${result.messageId}`
+        )
         return { ok: true, messageId: result.messageId }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -571,8 +624,19 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   /** Mention members in a Feishu group chat */
   ipcMain.handle(
     'plugin:feishu:send-mention',
-    async (_event, args: { pluginId: string; chatId?: string; userIds?: string[]; atAll?: boolean; text?: string }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: {
+        pluginId: string
+        chatId?: string
+        userIds?: string[]
+        atAll?: boolean
+        text?: string
+      }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
 
       try {
@@ -600,8 +664,8 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
 
         const postContent = {
           zh_cn: {
-            content: [elements],
-          },
+            content: [elements]
+          }
         }
 
         const result = await service.api.sendMessage(chatId, JSON.stringify(postContent), 'post')
@@ -617,8 +681,19 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   /** List members in a Feishu chat */
   ipcMain.handle(
     'plugin:feishu:list-members',
-    async (_event, args: { pluginId: string; chatId?: string; pageToken?: string; pageSize?: number; memberIdType?: 'open_id' | 'user_id' | 'union_id' }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: {
+        pluginId: string
+        chatId?: string
+        pageToken?: string
+        pageSize?: number
+        memberIdType?: 'open_id' | 'user_id' | 'union_id'
+      }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
 
       try {
@@ -628,7 +703,7 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
           chatId,
           pageToken: args.pageToken,
           pageSize: args.pageSize,
-          memberIdType: args.memberIdType,
+          memberIdType: args.memberIdType
         })
         return result
       } catch (err) {
@@ -642,8 +717,18 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   /** Send urgent push (app/sms) */
   ipcMain.handle(
     'plugin:feishu:send-urgent',
-    async (_event, args: { pluginId: string; messageId: string; userIds: string[]; urgentTypes: Array<'app' | 'sms'> }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: {
+        pluginId: string
+        messageId: string
+        userIds: string[]
+        urgentTypes: Array<'app' | 'sms'>
+      }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
 
       try {
@@ -668,8 +753,19 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   /** Download Feishu message resource (audio/file) as base64 */
   ipcMain.handle(
     'plugin:feishu:download-resource',
-    async (_event, args: { pluginId: string; messageId: string; fileKey: string; type?: 'image' | 'file'; mediaType?: string }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: {
+        pluginId: string
+        messageId: string
+        fileKey: string
+        type?: 'image' | 'file'
+        mediaType?: string
+      }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
 
       try {
@@ -678,7 +774,11 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
           args.fileKey,
           args.type ?? 'file'
         )
-        return { ok: true, base64: buf.toString('base64'), mediaType: args.mediaType ?? 'application/octet-stream' }
+        return {
+          ok: true,
+          base64: buf.toString('base64'),
+          mediaType: args.mediaType ?? 'application/octet-stream'
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error('[Feishu] download-resource failed:', msg)
@@ -689,25 +789,26 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
 
   // ── Feishu Bitable ──
 
-  ipcMain.handle(
-    'plugin:feishu:bitable:list-apps',
-    async (_event, args: { pluginId: string }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
-      if (!service?.api) return { error: 'Feishu plugin not running or not found' }
-      try {
-        const data = await service.api.listBitableApps()
-        return { ok: true, data }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        return { error: msg }
-      }
+  ipcMain.handle('plugin:feishu:bitable:list-apps', async (_event, args: { pluginId: string }) => {
+    const service = channelManager.getService(args.pluginId) as
+      | import('../channels/providers/feishu/feishu-service').FeishuService
+      | undefined
+    if (!service?.api) return { error: 'Feishu plugin not running or not found' }
+    try {
+      const data = await service.api.listBitableApps()
+      return { ok: true, data }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { error: msg }
     }
-  )
+  })
 
   ipcMain.handle(
     'plugin:feishu:bitable:list-tables',
     async (_event, args: { pluginId: string; appToken: string }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
       try {
         const data = await service.api.listBitableTables(args.appToken)
@@ -722,7 +823,9 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
   ipcMain.handle(
     'plugin:feishu:bitable:list-fields',
     async (_event, args: { pluginId: string; appToken: string; tableId: string }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
       try {
         const data = await service.api.listBitableFields(args.appToken, args.tableId)
@@ -736,14 +839,26 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
 
   ipcMain.handle(
     'plugin:feishu:bitable:get-records',
-    async (_event, args: { pluginId: string; appToken: string; tableId: string; filter?: string; pageSize?: number; pageToken?: string }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: {
+        pluginId: string
+        appToken: string
+        tableId: string
+        filter?: string
+        pageSize?: number
+        pageToken?: string
+      }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
       try {
         const data = await service.api.getBitableRecords(args.appToken, args.tableId, {
           filter: args.filter,
           pageSize: args.pageSize,
-          pageToken: args.pageToken,
+          pageToken: args.pageToken
         })
         return { ok: true, data }
       } catch (err) {
@@ -755,11 +870,20 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
 
   ipcMain.handle(
     'plugin:feishu:bitable:create-records',
-    async (_event, args: { pluginId: string; appToken: string; tableId: string; records: unknown[] }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: { pluginId: string; appToken: string; tableId: string; records: unknown[] }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
       try {
-        const data = await service.api.createBitableRecords(args.appToken, args.tableId, args.records)
+        const data = await service.api.createBitableRecords(
+          args.appToken,
+          args.tableId,
+          args.records
+        )
         return { ok: true, data }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -770,11 +894,20 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
 
   ipcMain.handle(
     'plugin:feishu:bitable:update-records',
-    async (_event, args: { pluginId: string; appToken: string; tableId: string; records: unknown[] }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: { pluginId: string; appToken: string; tableId: string; records: unknown[] }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
       try {
-        const data = await service.api.updateBitableRecords(args.appToken, args.tableId, args.records)
+        const data = await service.api.updateBitableRecords(
+          args.appToken,
+          args.tableId,
+          args.records
+        )
         return { ok: true, data }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -785,11 +918,20 @@ export function registerChannelHandlers(channelManager: ChannelManager): void {
 
   ipcMain.handle(
     'plugin:feishu:bitable:delete-records',
-    async (_event, args: { pluginId: string; appToken: string; tableId: string; recordIds: string[] }) => {
-      const service = channelManager.getService(args.pluginId) as import('../channels/providers/feishu/feishu-service').FeishuService | undefined
+    async (
+      _event,
+      args: { pluginId: string; appToken: string; tableId: string; recordIds: string[] }
+    ) => {
+      const service = channelManager.getService(args.pluginId) as
+        | import('../channels/providers/feishu/feishu-service').FeishuService
+        | undefined
       if (!service?.api) return { error: 'Feishu plugin not running or not found' }
       try {
-        const data = await service.api.deleteBitableRecords(args.appToken, args.tableId, args.recordIds)
+        const data = await service.api.deleteBitableRecords(
+          args.appToken,
+          args.tableId,
+          args.recordIds
+        )
         return { ok: true, data }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)

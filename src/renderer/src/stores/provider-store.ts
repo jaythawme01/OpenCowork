@@ -42,7 +42,10 @@ function createProviderFromPreset(preset: BuiltinProviderPreset): AIProvider {
     ...(preset.channelConfig ? { channelConfig: { ...preset.channelConfig } } : {}),
     ...(preset.requestOverrides ? { requestOverrides: { ...preset.requestOverrides } } : {}),
     ...(preset.instructionsPrompt ? { instructionsPrompt: preset.instructionsPrompt } : {}),
-    ...(preset.ui ? { ui: { ...preset.ui } } : {})
+    ...(preset.ui ? { ui: { ...preset.ui } } : {}),
+    ...(preset.preferResponsesWebSocket !== undefined
+      ? { preferResponsesWebSocket: preset.preferResponsesWebSocket }
+      : {})
   }
 }
 
@@ -55,6 +58,22 @@ export function modelSupportsVision(
   return Boolean(
     model.supportsVision || model.category === 'image' || requestType === 'openai-images'
   )
+}
+
+export function modelSupportsComputerUse(
+  model: AIModelConfig | null | undefined,
+  providerType?: ProviderType
+): boolean {
+  if (!model) return false
+  const requestType = model.type ?? providerType
+  return requestType === 'openai-responses' && model.supportsComputerUse === true
+}
+
+export function isModelComputerUseEnabled(
+  model: AIModelConfig | null | undefined,
+  providerType?: ProviderType
+): boolean {
+  return modelSupportsComputerUse(model, providerType) && model?.enableComputerUse === true
 }
 
 export function normalizeProviderBaseUrl(
@@ -560,6 +579,7 @@ export const useProviderStore = create<ProviderStore>()(
           model: activeModelId,
           providerId: provider.id,
           providerBuiltinId: provider.builtinId,
+          computerUseEnabled: isModelComputerUseEnabled(activeModel, requestType),
           ...(serviceTier ? { serviceTier } : {}),
           requiresApiKey: provider.requiresApiKey,
           ...(provider.useSystemProxy !== undefined
@@ -572,6 +592,9 @@ export const useProviderStore = create<ProviderStore>()(
           ...(requestOverrides ? { requestOverrides } : {}),
           ...(provider.instructionsPrompt
             ? { instructionsPrompt: provider.instructionsPrompt }
+            : {}),
+          ...(provider.preferResponsesWebSocket
+            ? { preferResponsesWebSocket: true }
             : {})
         }
       },
@@ -656,6 +679,7 @@ export const useProviderStore = create<ProviderStore>()(
           model: modelId,
           providerId: provider.id,
           providerBuiltinId: provider.builtinId,
+          computerUseEnabled: isModelComputerUseEnabled(model, requestType),
           ...(serviceTier ? { serviceTier } : {}),
           requiresApiKey: provider.requiresApiKey,
           ...(provider.useSystemProxy !== undefined
@@ -668,6 +692,9 @@ export const useProviderStore = create<ProviderStore>()(
           ...(requestOverrides ? { requestOverrides } : {}),
           ...(provider.instructionsPrompt
             ? { instructionsPrompt: provider.instructionsPrompt }
+            : {}),
+          ...(provider.preferResponsesWebSocket
+            ? { preferResponsesWebSocket: true }
             : {})
         }
       },
@@ -716,6 +743,7 @@ export const useProviderStore = create<ProviderStore>()(
           model,
           providerId: provider.id,
           providerBuiltinId: provider.builtinId,
+          computerUseEnabled: isModelComputerUseEnabled(fastModel, requestType),
           ...(serviceTier ? { serviceTier } : {}),
           requiresApiKey: provider.requiresApiKey,
           ...(provider.useSystemProxy !== undefined
@@ -728,6 +756,9 @@ export const useProviderStore = create<ProviderStore>()(
           ...(requestOverrides ? { requestOverrides } : {}),
           ...(provider.instructionsPrompt
             ? { instructionsPrompt: provider.instructionsPrompt }
+            : {}),
+          ...(provider.preferResponsesWebSocket
+            ? { preferResponsesWebSocket: true }
             : {})
         }
       },
@@ -977,8 +1008,8 @@ function ensureBuiltinPresets(): void {
   }
 
   const fastProviderId = shouldAdoptDefaultFastSelection
-    ? defaultFastSelection?.providerId ?? state.activeFastProviderId ?? state.activeProviderId
-    : state.activeFastProviderId ?? state.activeProviderId
+    ? (defaultFastSelection?.providerId ?? state.activeFastProviderId ?? state.activeProviderId)
+    : (state.activeFastProviderId ?? state.activeProviderId)
   if (fastProviderId) {
     const fastProvider = state.providers.find((provider) => provider.id === fastProviderId)
     if (fastProvider) {

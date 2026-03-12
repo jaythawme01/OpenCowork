@@ -185,13 +185,15 @@
     "selectModel": "选择图片模型",
     "toolStatus": "Tool 状态",
     "toolStatusDesc": "只有在插件启用且模型有效时，图片 Tool 才会暴露给 Agent。",
-    "toolStatusDescDesktop": "桌面控制工具仅在插件启用后才会暴露给 Agent，但每次调用仍需审批。",
+    "toolStatusDescDesktop": "桌面控制工具仅在插件启用后才会暴露给 Agent，但每次调用仍需审批；若模型同时启用 Computer Use，则会优先通过 Computer Use 代理这些能力。",
     "toolArgs": "可用参数：prompt、count",
     "toolArgsMap": {
       "ImageGenerate": "可用参数：prompt、count",
       "DesktopScreenshot": "可用参数：无",
       "DesktopClick": "可用参数：x、y、button、action",
-      "DesktopType": "可用参数：text、key、hotkey"
+      "DesktopType": "可用参数：text、key、hotkey",
+      "DesktopScroll": "可用参数：x、y、scrollX、scrollY",
+      "DesktopWait": "可用参数：delayMs"
     },
     "status": {
       "disabled": "插件未启用，因此其工具不会暴露给 Agent。",
@@ -207,9 +209,9 @@
       },
       "desktop-control": {
         "title": "桌面控制插件",
-        "description": "为 Agent 提供桌面截图、坐标点击和键盘输入工具。",
+        "description": "为 Agent 提供桌面截图、坐标点击、滚动和键盘输入工具。",
         "promptTitle": "Tool 使用约束",
-        "promptDesc": "这些工具可以读取并操作整个桌面。建议保持审批开启，先截图再操作，仅在确实需要桌面自动化时启用。"
+        "promptDesc": "这些工具可以读取并操作整个桌面。建议保持审批开启，先截图再操作，仅在确实需要桌面自动化时启用。若当前模型启用了 Computer Use，将优先通过 OpenAI Computer Use 协调这些桌面能力。"
       }
     }
   },
@@ -380,6 +382,9 @@
     "capabilities": "能力",
     "supportsVision": "支持视觉（图片输入）",
     "supportsFunctionCall": "支持函数调用",
+    "supportsComputerUse": "支持 Computer Use",
+    "enableComputerUse": "启用 Computer Use",
+    "computerUseEnabled": "Computer Use 已启用",
     "supportsThinking": "支持扩展思考",
     "oauthLogin": "OAuth 登录",
     "oauthConnected": "已连接",

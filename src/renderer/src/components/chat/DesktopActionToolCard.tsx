@@ -7,6 +7,8 @@ import {
   Loader2,
   Monitor,
   MousePointerClick,
+  MoveVertical,
+  Clock3,
   TriangleAlert
 } from 'lucide-react'
 import type { ToolCallStatus } from '@renderer/lib/agent/types'
@@ -57,6 +59,8 @@ function parseJsonOutput(output: ToolResultContent | undefined): Record<string, 
 function getToolIcon(name: string): React.JSX.Element {
   if (name === 'DesktopScreenshot') return <Monitor className="size-4" />
   if (name === 'DesktopClick') return <MousePointerClick className="size-4" />
+  if (name === 'DesktopScroll') return <MoveVertical className="size-4" />
+  if (name === 'DesktopWait') return <Clock3 className="size-4" />
   return <Keyboard className="size-4" />
 }
 
@@ -99,6 +103,17 @@ export function DesktopActionToolCard({
         action: jsonOutput?.action ?? input.action ?? 'click'
       })
     }
+    if (name === 'DesktopScroll') {
+      return t('toolCall.desktop.scroll.summary', {
+        scrollX: jsonOutput?.scrollX ?? input.scrollX ?? 0,
+        scrollY: jsonOutput?.scrollY ?? input.scrollY ?? 0
+      })
+    }
+    if (name === 'DesktopWait') {
+      return t('toolCall.desktop.wait.summary', {
+        delayMs: jsonOutput?.delayMs ?? input.delayMs ?? 0
+      })
+    }
     return t('toolCall.desktop.type.summary', {
       mode: jsonOutput?.mode ?? (input.text ? 'text' : input.key ? 'key' : 'hotkey')
     })
@@ -123,9 +138,7 @@ export function DesktopActionToolCard({
                 : { scale: 1, rotate: 0 }
             }
             transition={
-              isRunning
-                ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
-                : ITEM_TRANSITION
+              isRunning ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' } : ITEM_TRANSITION
             }
           >
             {getToolIcon(name)}
@@ -216,7 +229,13 @@ export function DesktopActionToolCard({
                         ? `data:${image.source.mediaType || 'image/png'};base64,${image.source.data}`
                         : (image.source.url ?? '')
                     if (!src) return null
-                    return <ImagePreview key={`${src}-${index}`} src={src} alt={`Desktop screenshot ${index + 1}`} />
+                    return (
+                      <ImagePreview
+                        key={`${src}-${index}`}
+                        src={src}
+                        alt={`Desktop screenshot ${index + 1}`}
+                      />
+                    )
                   })}
                 </div>
               ) : null}

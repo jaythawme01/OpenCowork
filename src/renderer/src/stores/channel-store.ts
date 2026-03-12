@@ -6,7 +6,7 @@ import { useProviderStore } from '@renderer/stores/provider-store'
 import type {
   PluginProviderDescriptor,
   PluginInstance,
-  PluginIncomingEvent,
+  PluginIncomingEvent
 } from '@renderer/lib/channel/types'
 import { IPC } from '@renderer/lib/ipc/channels'
 
@@ -72,7 +72,7 @@ export function initChannelEventListener(): void {
     if (data.type === 'status_change') {
       const status = data.data as 'running' | 'stopped' | 'error'
       useChannelStore.setState((s) => ({
-        channelStatuses: { ...s.channelStatuses, [data.pluginId]: status },
+        channelStatuses: { ...s.channelStatuses, [data.pluginId]: status }
       }))
     }
     if (data.type === 'incoming_message') {
@@ -81,7 +81,7 @@ export function initChannelEventListener(): void {
     if (data.type === 'error') {
       console.error(`[Plugin:${data.pluginId}] Error:`, data.data)
       useChannelStore.setState((s) => ({
-        channelStatuses: { ...s.channelStatuses, [data.pluginId]: 'error' },
+        channelStatuses: { ...s.channelStatuses, [data.pluginId]: 'error' }
       }))
     }
   })
@@ -117,9 +117,7 @@ export function initChannelEventListener(): void {
       }
     }
 
-    window.dispatchEvent(
-      new CustomEvent('plugin:auto-reply-task', { detail: task })
-    )
+    window.dispatchEvent(new CustomEvent('plugin:auto-reply-task', { detail: task }))
   })
 }
 
@@ -133,7 +131,9 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
 
   loadProviders: async () => {
     try {
-      const providers = (await ipcClient.invoke(IPC.PLUGIN_LIST_PROVIDERS)) as PluginProviderDescriptor[]
+      const providers = (await ipcClient.invoke(
+        IPC.PLUGIN_LIST_PROVIDERS
+      )) as PluginProviderDescriptor[]
       set({ providers: Array.isArray(providers) ? providers : [] })
     } catch {
       set({ providers: [] })
@@ -144,7 +144,10 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
     try {
       const plugins = (await ipcClient.invoke(IPC.PLUGIN_LIST)) as PluginInstance[]
       const arr = Array.isArray(plugins) ? plugins : []
-      console.log(`[ChannelStore] Loaded ${arr.length} plugins:`, arr.map((p) => `${p.type}(${p.id})`))
+      console.log(
+        `[ChannelStore] Loaded ${arr.length} plugins:`,
+        arr.map((p) => `${p.type}(${p.id})`)
+      )
       // Auto-activate all enabled plugins
       const enabledIds = arr.filter((p) => p.enabled).map((p) => p.id)
       set({ channels: arr, activeChannelIds: enabledIds })
@@ -168,12 +171,13 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
       enabled: true,
       config,
       createdAt: Date.now(),
-      ...(tools ? { tools } : {}),
+      enableResponsesWebSocket: false,
+      ...(tools ? { tools } : {})
     }
     await ipcClient.invoke(IPC.PLUGIN_ADD, instance)
     set((s) => ({
       channels: [...s.channels, instance],
-      activeChannelIds: [...s.activeChannelIds, id],
+      activeChannelIds: [...s.activeChannelIds, id]
     }))
     return id
   },
@@ -192,7 +196,7 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
           next.model = null
         }
         return next
-      }),
+      })
     }))
 
     if ('providerId' in normalizedPatch || 'model' in normalizedPatch) {
@@ -228,7 +232,7 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
     set((s) => ({
       channels: s.channels.filter((p) => p.id !== id),
       selectedChannelId: s.selectedChannelId === id ? null : s.selectedChannelId,
-      activeChannelIds: s.activeChannelIds.filter((pid) => pid !== id),
+      activeChannelIds: s.activeChannelIds.filter((pid) => pid !== id)
     }))
   },
 
@@ -242,13 +246,13 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
       set((s) => ({
         activeChannelIds: s.activeChannelIds.includes(id)
           ? s.activeChannelIds
-          : [...s.activeChannelIds, id],
+          : [...s.activeChannelIds, id]
       }))
     } else {
       await get().stopChannel(id)
       // Deactivate when disabling
       set((s) => ({
-        activeChannelIds: s.activeChannelIds.filter((pid) => pid !== id),
+        activeChannelIds: s.activeChannelIds.filter((pid) => pid !== id)
       }))
     }
   },
@@ -261,17 +265,17 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
       }
       if (!res.success) {
         set((s) => ({
-          channelStatuses: { ...s.channelStatuses, [id]: 'error' },
+          channelStatuses: { ...s.channelStatuses, [id]: 'error' }
         }))
         return res.error ?? 'Unknown error'
       }
       set((s) => ({
-        channelStatuses: { ...s.channelStatuses, [id]: 'running' },
+        channelStatuses: { ...s.channelStatuses, [id]: 'running' }
       }))
       return undefined
     } catch (err) {
       set((s) => ({
-        channelStatuses: { ...s.channelStatuses, [id]: 'error' },
+        channelStatuses: { ...s.channelStatuses, [id]: 'error' }
       }))
       return err instanceof Error ? err.message : String(err)
     }
@@ -281,7 +285,7 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
     try {
       await ipcClient.invoke(IPC.PLUGIN_STOP, id)
       set((s) => ({
-        channelStatuses: { ...s.channelStatuses, [id]: 'stopped' },
+        channelStatuses: { ...s.channelStatuses, [id]: 'stopped' }
       }))
     } catch {
       // ignore
@@ -295,7 +299,7 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
         | 'stopped'
         | 'error'
       set((s) => ({
-        channelStatuses: { ...s.channelStatuses, [id]: status },
+        channelStatuses: { ...s.channelStatuses, [id]: status }
       }))
     } catch {
       // ignore
@@ -310,7 +314,7 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
       return {
         activeChannelIds: isActive
           ? s.activeChannelIds.filter((pid) => pid !== id)
-          : [...s.activeChannelIds, id],
+          : [...s.activeChannelIds, id]
       }
     })
   },
@@ -321,7 +325,7 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
     try {
       const sessions = (await ipcClient.invoke(IPC.PLUGIN_SESSIONS_LIST, pluginId)) as unknown[]
       set((s) => ({
-        channelSessions: { ...s.channelSessions, [pluginId]: sessions },
+        channelSessions: { ...s.channelSessions, [pluginId]: sessions }
       }))
     } catch {
       // ignore
@@ -339,6 +343,5 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
   getActiveChannels: () => {
     const { channels, activeChannelIds } = get()
     return channels.filter((p) => activeChannelIds.includes(p.id))
-  },
+  }
 }))
-

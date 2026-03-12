@@ -16,11 +16,16 @@ const allowedNamedKeys = [
   'Home',
   'End',
   'PageUp',
-  'PageDown'
+  'PageDown',
+  'Space'
 ] as const
 
 type AllowedModifier = (typeof allowedModifiers)[number]
 type AllowedNamedKey = (typeof allowedNamedKeys)[number]
+
+function isSupportedSingleKey(value: string): boolean {
+  return /^[a-zA-Z0-9]$/.test(value) || /^F([1-9]|1[0-2])$/.test(value)
+}
 
 interface DesktopTypeResult {
   success?: boolean
@@ -64,20 +69,23 @@ export const desktopTypeTool: ToolHandler = {
       ? input.hotkey.filter((item): item is string => typeof item === 'string')
       : null
 
-    const providedCount = Number(Boolean(text)) + Number(Boolean(key)) + Number(Boolean(hotkey?.length))
+    const providedCount =
+      Number(Boolean(text)) + Number(Boolean(key)) + Number(Boolean(hotkey?.length))
     if (providedCount !== 1) {
       return JSON.stringify({
         error: 'DesktopType requires exactly one of: text, key, or hotkey.'
       })
     }
 
-    if (key && !allowedNamedKeys.includes(key as AllowedNamedKey)) {
+    if (key && !allowedNamedKeys.includes(key as AllowedNamedKey) && !isSupportedSingleKey(key)) {
       return JSON.stringify({ error: `Unsupported key: ${key}.` })
     }
 
     if (hotkey) {
       if (hotkey.length < 2) {
-        return JSON.stringify({ error: 'DesktopType hotkey must include at least one modifier and one key.' })
+        return JSON.stringify({
+          error: 'DesktopType hotkey must include at least one modifier and one key.'
+        })
       }
       const modifiers = hotkey.slice(0, -1)
       const mainKey = hotkey.at(-1)

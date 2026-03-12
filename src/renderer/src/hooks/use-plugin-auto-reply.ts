@@ -57,7 +57,10 @@ interface PluginAutoReplyTask {
 
 const PLUGIN_STREAM_DELTA_FLUSH_MS = 66
 
-function shouldReplaceSessionTitle(currentTitle: string | undefined, nextTitle: string | undefined): boolean {
+function shouldReplaceSessionTitle(
+  currentTitle: string | undefined,
+  nextTitle: string | undefined
+): boolean {
   const current = (currentTitle ?? '').trim()
   const next = (nextTitle ?? '').trim()
   if (!next || current === next) return false
@@ -296,7 +299,9 @@ async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
       if (dbSession) {
         const newSession = {
           id: sessionId,
-          title: shouldReplaceSessionTitle(dbSession.title, resolvedTitle) ? resolvedTitle : (dbSession.title || resolvedTitle),
+          title: shouldReplaceSessionTitle(dbSession.title, resolvedTitle)
+            ? resolvedTitle
+            : dbSession.title || resolvedTitle,
           mode: (dbSession.mode as 'chat' | 'clarify' | 'cowork' | 'code') || 'cowork',
           messages: [],
           messageCount: 0,
@@ -543,7 +548,8 @@ async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
   const agentProviderConfig: ProviderConfig = {
     ...providerConfig,
     systemPrompt,
-    sessionId
+    sessionId,
+    ...(channelMeta?.enableResponsesWebSocket ? { preferResponsesWebSocket: true } : {})
   }
 
   const loopConfig: AgentLoopConfig = {

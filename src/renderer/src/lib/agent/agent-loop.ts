@@ -1,6 +1,12 @@
 import { nanoid } from 'nanoid'
 import { Allow, parse as parsePartialJSON } from 'partial-json'
-import type { UnifiedMessage, ContentBlock, ToolUseBlock, ToolResultContent } from '../api/types'
+import type {
+  UnifiedMessage,
+  ContentBlock,
+  ToolUseBlock,
+  ToolResultContent,
+  ToolCallExtraContent
+} from '../api/types'
 import { createProvider } from '../api/provider'
 import { toolRegistry } from './tool-registry'
 import type { AgentEvent, AgentLoopConfig, ToolCallState } from './types'
@@ -94,6 +100,7 @@ export async function* runAgentLoop(
     let assistantContentBlocks: ContentBlock[] = []
     let toolCalls: ToolCallState[] = []
     let sendAttempt = 0
+    let providerResponseId: string | undefined
     // stopReason from message_end is not used at loop level
 
     while (sendAttempt < MAX_PROVIDER_RETRIES) {
@@ -101,14 +108,7 @@ export async function* runAgentLoop(
       toolCalls = []
       const toolArgsById = new Map<string, string>()
       const toolNamesById = new Map<string, string>()
-      const toolExtraContentById = new Map<
-        string,
-        {
-          google?: {
-            thought_signature?: string
-          }
-        }
-      >()
+      const toolExtraContentById = new Map<string, ToolCallExtraContent>()
       let currentToolId = ''
       let currentToolName = ''
       let streamedContent = false
@@ -140,7 +140,7 @@ export async function* runAgentLoop(
                 yield {
                   type: 'thinking_encrypted',
                   thinkingEncryptedContent: event.thinkingEncryptedContent,
-                  thinkingEncryptedProvider: event.thinkingEncryptedProvider,
+                  thinkingEncryptedProvider: event.thinkingEncryptedProvider
                 }
                 appendThinkingEncryptedToBlocks(
                   assistantContentBlocks,
@@ -171,7 +171,7 @@ export async function* runAgentLoop(
                 assistantContentBlocks.push({
                   type: 'image_error',
                   code: event.imageError.code,
-                  message: event.imageError.message,
+                  message: event.imageError.message
                 })
                 yield { type: 'image_error', imageError: event.imageError }
               }
@@ -212,7 +212,7 @@ export async function* runAgentLoop(
                   yield {
                     type: 'tool_use_args_delta',
                     toolCallId: targetToolId,
-                    partialInput,
+                    partialInput
                   }
                 }
               }
@@ -226,31 +226,31 @@ export async function* runAgentLoop(
               const streamedToolInput = parseToolInputSnapshot(rawToolArgs, endToolName)
               const mergedToolInput = mergeToolInputs(streamedToolInput, event.toolCallInput)
               const toolInput =
-                Object.keys(mergedToolInput).length > 0 ? mergedToolInput : safeParseJSON(rawToolArgs)
+                Object.keys(mergedToolInput).length > 0
+                  ? mergedToolInput
+                  : safeParseJSON(rawToolArgs)
               const toolUseBlock: ToolUseBlock = {
                 type: 'tool_use',
                 id: endToolId,
                 name: endToolName,
                 input: toolInput,
-                extraContent: event.toolCallExtraContent ?? toolExtraContentById.get(endToolId),
+                extraContent: event.toolCallExtraContent ?? toolExtraContentById.get(endToolId)
               }
               assistantContentBlocks.push(toolUseBlock)
               toolArgsById.delete(endToolId)
               toolNamesById.delete(endToolId)
               toolExtraContentById.delete(endToolId)
 
-              const requiresApproval = config.forceApproval || toolRegistry.checkRequiresApproval(
-                endToolName,
-                toolInput,
-                toolCtx
-              )
+              const requiresApproval =
+                config.forceApproval ||
+                toolRegistry.checkRequiresApproval(endToolName, toolInput, toolCtx)
 
               const tc: ToolCallState = {
                 id: toolUseBlock.id,
                 name: endToolName,
                 input: toolInput,
                 status: requiresApproval ? 'pending_approval' : 'running',
-                requiresApproval,
+                requiresApproval
               }
               toolCalls.push(tc)
               yield {
@@ -262,15 +262,23 @@ export async function* runAgentLoop(
                   ...(toolUseBlock.extraContent ? { extraContent: toolUseBlock.extraContent } : {})
                 }
               }
-              break;
+              break
             }
 
             case 'message_end':
               if (event.usage) {
                 lastInputTokens = event.usage.inputTokens
               }
-              if (event.usage || event.timing) {
-                yield { type: 'message_end', usage: event.usage, timing: event.timing }
+              if (event.providerResponseId) {
+                providerResponseId = event.providerResponseId
+              }
+              if (event.usage || event.timing || event.providerResponseId) {
+                yield {
+                  type: 'message_end',
+                  usage: event.usage,
+                  timing: event.timing,
+                  providerResponseId: event.providerResponseId
+                }
               }
               break
 
@@ -282,7 +290,7 @@ export async function* runAgentLoop(
 
             case 'error':
               throw new ProviderRequestError(event.error?.message ?? 'Unknown API error', {
-                type: event.error?.type,
+                type: event.error?.type
               })
           }
         }
@@ -292,18 +300,17 @@ export async function* runAgentLoop(
         if (toolArgsById.size > 0) {
           for (const [danglingToolId, argsText] of toolArgsById) {
             const danglingName = toolNamesById.get(danglingToolId) || currentToolName
-            const danglingInput = parseToolInputSnapshot(argsText, danglingName) ?? safeParseJSON(argsText)
-            const requiresApproval = config.forceApproval || toolRegistry.checkRequiresApproval(
-              danglingName,
-              danglingInput,
-              toolCtx
-            )
+            const danglingInput =
+              parseToolInputSnapshot(argsText, danglingName) ?? safeParseJSON(argsText)
+            const requiresApproval =
+              config.forceApproval ||
+              toolRegistry.checkRequiresApproval(danglingName, danglingInput, toolCtx)
             const toolUseBlock: ToolUseBlock = {
               type: 'tool_use',
               id: danglingToolId,
               name: danglingName,
               input: danglingInput,
-              extraContent: toolExtraContentById.get(danglingToolId),
+              extraContent: toolExtraContentById.get(danglingToolId)
             }
             assistantContentBlocks.push(toolUseBlock)
             toolCalls.push({
@@ -311,11 +318,11 @@ export async function* runAgentLoop(
               name: danglingName,
               input: danglingInput,
               status: requiresApproval ? 'pending_approval' : 'running',
-              requiresApproval,
+              requiresApproval
             })
             yield {
               type: 'tool_use_generated',
-              toolUseBlock: { id: danglingToolId, name: danglingName, input: danglingInput },
+              toolUseBlock: { id: danglingToolId, name: danglingName, input: danglingInput }
             }
           }
           toolArgsById.clear()
@@ -352,6 +359,7 @@ export async function* runAgentLoop(
       role: 'assistant',
       content: assistantContentBlocks.length > 0 ? assistantContentBlocks : '',
       createdAt: Date.now(),
+      ...(providerResponseId ? { providerResponseId } : {})
     }
     conversationMessages.push(assistantMsg)
 
@@ -374,12 +382,15 @@ export async function* runAgentLoop(
             yield { type: 'loop_end', reason: 'aborted' }
             return
           }
-          yield { type: 'tool_call_result', toolCall: { ...tc, status: 'error', error: 'User denied permission' } }
+          yield {
+            type: 'tool_call_result',
+            toolCall: { ...tc, status: 'error', error: 'User denied permission' }
+          }
           toolResults.push({
             type: 'tool_result',
             toolUseId: tc.id,
             content: 'Permission denied by user',
-            isError: true,
+            isError: true
           })
           continue
         }
@@ -391,7 +402,10 @@ export async function* runAgentLoop(
       let output: ToolResultContent
       let toolError: string | undefined
       try {
-        output = await toolRegistry.execute(tc.name, tc.input, { ...toolCtx, currentToolUseId: tc.id })
+        output = await toolRegistry.execute(tc.name, tc.input, {
+          ...toolCtx,
+          currentToolUseId: tc.id
+        })
       } catch (toolErr) {
         if (config.signal.aborted) {
           yield { type: 'loop_end', reason: 'aborted' }
@@ -423,7 +437,7 @@ export async function* runAgentLoop(
         type: 'tool_result',
         toolUseId: tc.id,
         content: output,
-        ...(toolError ? { isError: true } : {}),
+        ...(toolError ? { isError: true } : {})
       })
     }
 
@@ -432,7 +446,7 @@ export async function* runAgentLoop(
       id: nanoid(),
       role: 'user',
       content: toolResults,
-      createdAt: Date.now(),
+      createdAt: Date.now()
     }
     conversationMessages.push(toolResultMsg)
 
@@ -442,7 +456,11 @@ export async function* runAgentLoop(
       stopReason: 'tool_use',
       toolResults: toolResults
         .filter((b) => b.type === 'tool_result')
-        .map((b) => ({ toolUseId: (b as { toolUseId: string }).toolUseId, content: (b as { content: ToolResultContent }).content, isError: (b as { isError?: boolean }).isError })),
+        .map((b) => ({
+          toolUseId: (b as { toolUseId: string }).toolUseId,
+          content: (b as { content: ToolResultContent }).content,
+          isError: (b as { isError?: boolean }).isError
+        }))
     }
   }
 
@@ -501,7 +519,7 @@ function appendThinkingEncryptedToBlocks(
     type: 'thinking',
     thinking: '',
     encryptedContent,
-    encryptedContentProvider: provider,
+    encryptedContentProvider: provider
   })
 }
 

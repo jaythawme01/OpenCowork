@@ -28,8 +28,15 @@ function provisionBuiltinPlugins(plugins: AppPluginInstance[]): AppPluginInstanc
   for (const descriptor of APP_PLUGIN_DESCRIPTORS) {
     const existing = next.find((plugin) => plugin.id === descriptor.id)
     if (!existing) {
-      next.push(createDefaultPlugin(descriptor.id))
+      const created = createDefaultPlugin(descriptor.id)
+      if (descriptor.id === DESKTOP_CONTROL_PLUGIN_ID) {
+        created.enabled = false
+      }
+      next.push(created)
       continue
+    }
+    if (descriptor.id === DESKTOP_CONTROL_PLUGIN_ID) {
+      existing.enabled = false
     }
 
     if (typeof existing.useGlobalModel !== 'boolean') {
@@ -109,10 +116,7 @@ export const useAppPluginStore = create<AppPluginStore>()(
 
       isImageToolAvailable: () => get().getResolvedImagePluginConfig() !== null,
 
-      isDesktopControlToolAvailable: () => {
-        const plugin = get().getPlugin(DESKTOP_CONTROL_PLUGIN_ID)
-        return Boolean(plugin?.enabled)
-      }
+      isDesktopControlToolAvailable: () => false
     }),
     {
       name: 'opencowork-app-plugins',

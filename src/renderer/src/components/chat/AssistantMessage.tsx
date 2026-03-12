@@ -48,7 +48,9 @@ import type { ToolCallState } from '@renderer/lib/agent/types'
 import {
   DESKTOP_CLICK_TOOL_NAME,
   DESKTOP_SCREENSHOT_TOOL_NAME,
+  DESKTOP_SCROLL_TOOL_NAME,
   DESKTOP_TYPE_TOOL_NAME,
+  DESKTOP_WAIT_TOOL_NAME,
   IMAGE_GENERATE_TOOL_NAME
 } from '@renderer/lib/app-plugin/types'
 import { LazySyntaxHighlighter } from './LazySyntaxHighlighter'
@@ -882,7 +884,9 @@ export function AssistantMessage({
       if (
         block.name === DESKTOP_SCREENSHOT_TOOL_NAME ||
         block.name === DESKTOP_CLICK_TOOL_NAME ||
-        block.name === DESKTOP_TYPE_TOOL_NAME
+        block.name === DESKTOP_TYPE_TOOL_NAME ||
+        block.name === DESKTOP_SCROLL_TOOL_NAME ||
+        block.name === DESKTOP_WAIT_TOOL_NAME
       ) {
         const result = toolResults?.get(block.id)
         const liveTc = effectiveLiveToolCallMap?.get(block.id)

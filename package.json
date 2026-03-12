@@ -46,6 +46,7 @@
     "dingtalk-stream": "^2.1.4",
     "electron-updater": "^6.3.9",
     "glob": "^13.0.1",
+    "https-proxy-agent": "^7.0.6",
     "gpt-tokenizer": "^3.4.0",
     "html-to-image": "^1.11.13",
     "i18next": "^25.8.6",

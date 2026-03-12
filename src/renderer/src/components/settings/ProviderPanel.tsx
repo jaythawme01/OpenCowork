@@ -17,7 +17,8 @@ import {
   Mic,
   Shapes,
   Sparkles,
-  Copy
+  Copy,
+  MonitorSmartphone
 } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import { toast } from 'sonner'
@@ -42,6 +43,7 @@ import {
 import {
   useProviderStore,
   builtinProviderPresets,
+  modelSupportsComputerUse,
   modelSupportsVision,
   normalizeProviderBaseUrl
 } from '@renderer/stores/provider-store'
@@ -287,6 +289,10 @@ function ModelFormDialog({
   const [supportsFunctionCall, setSupportsFunctionCall] = useState(
     initial?.supportsFunctionCall ?? true
   )
+  const [supportsComputerUse, setSupportsComputerUse] = useState(
+    initial?.supportsComputerUse ?? false
+  )
+  const [enableComputerUse, setEnableComputerUse] = useState(initial?.enableComputerUse ?? false)
   const [icon, setIcon] = useState(initial?.icon ?? '')
   const [responseSummary, setResponseSummary] = useState<'auto' | 'concise' | 'detailed' | 'none'>(
     initial?.responseSummary ?? 'none'
@@ -331,6 +337,8 @@ function ModelFormDialog({
     }
     if (supportsVision) model.supportsVision = true
     if (!supportsFunctionCall) model.supportsFunctionCall = false
+    if (supportsComputerUse) model.supportsComputerUse = true
+    if (supportsComputerUse && enableComputerUse) model.enableComputerUse = true
     if (icon.trim()) model.icon = icon.trim()
     if (responseSummary && responseSummary !== 'none') model.responseSummary = responseSummary
     model.enablePromptCache = enablePromptCache
@@ -625,6 +633,22 @@ function ModelFormDialog({
                 </span>
                 <Switch checked={supportsFunctionCall} onCheckedChange={setSupportsFunctionCall} />
               </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {t('provider.supportsComputerUse')}
+                </span>
+                <Switch checked={supportsComputerUse} onCheckedChange={setSupportsComputerUse} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {t('provider.enableComputerUse')}
+                </span>
+                <Switch
+                  checked={supportsComputerUse && enableComputerUse}
+                  disabled={!supportsComputerUse}
+                  onCheckedChange={setEnableComputerUse}
+                />
+              </div>
             </div>
           </div>
 
@@ -849,9 +873,7 @@ function ProviderConfigPanel({ provider }: { provider: AIProvider }): React.JSX.
   const handleSetAllModelsEnabled = (enabled: boolean): void => {
     setProviderModels(
       provider.id,
-      provider.models.map((model) =>
-        model.enabled === enabled ? model : { ...model, enabled }
-      )
+      provider.models.map((model) => (model.enabled === enabled ? model : { ...model, enabled }))
     )
   }
 
@@ -1986,6 +2008,15 @@ function ProviderConfigPanel({ provider }: { provider: AIProvider }): React.JSX.
                       key: 'function',
                       icon: Code2,
                       label: t('provider.supportsFunctionCall')
+                    })
+                  }
+                  if (modelSupportsComputerUse(model, provider.type)) {
+                    capabilityIndicators.push({
+                      key: 'computer-use',
+                      icon: MonitorSmartphone,
+                      label: model.enableComputerUse
+                        ? t('provider.computerUseEnabled')
+                        : t('provider.supportsComputerUse')
                     })
                   }
                   if (model.supportsThinking) {

@@ -5,6 +5,8 @@ export const IMAGE_GENERATE_TOOL_NAME = 'ImageGenerate' as const
 export const DESKTOP_SCREENSHOT_TOOL_NAME = 'DesktopScreenshot' as const
 export const DESKTOP_CLICK_TOOL_NAME = 'DesktopClick' as const
 export const DESKTOP_TYPE_TOOL_NAME = 'DesktopType' as const
+export const DESKTOP_SCROLL_TOOL_NAME = 'DesktopScroll' as const
+export const DESKTOP_WAIT_TOOL_NAME = 'DesktopWait' as const
 
 export type AppPluginId = typeof IMAGE_PLUGIN_ID | typeof DESKTOP_CONTROL_PLUGIN_ID
 export type AppPluginToolName =
@@ -12,12 +14,15 @@ export type AppPluginToolName =
   | typeof DESKTOP_SCREENSHOT_TOOL_NAME
   | typeof DESKTOP_CLICK_TOOL_NAME
   | typeof DESKTOP_TYPE_TOOL_NAME
+  | typeof DESKTOP_SCROLL_TOOL_NAME
+  | typeof DESKTOP_WAIT_TOOL_NAME
 
 export interface AppPluginDescriptor {
   id: AppPluginId
   builtin: true
   toolNames: AppPluginToolName[]
   requiresModelConfig: boolean
+  hidden?: boolean
 }
 
 export interface AppPluginInstance {
@@ -41,8 +46,11 @@ export const APP_PLUGIN_DESCRIPTORS: AppPluginDescriptor[] = [
     toolNames: [
       DESKTOP_SCREENSHOT_TOOL_NAME,
       DESKTOP_CLICK_TOOL_NAME,
-      DESKTOP_TYPE_TOOL_NAME
+      DESKTOP_TYPE_TOOL_NAME,
+      DESKTOP_SCROLL_TOOL_NAME,
+      DESKTOP_WAIT_TOOL_NAME
     ],
-    requiresModelConfig: false
+    requiresModelConfig: false,
+    hidden: true
   }
 ]

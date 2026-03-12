@@ -121,10 +121,20 @@ export async function* ipcStreamRequest(params: {
   useSystemProxy?: boolean
   providerId?: string
   providerBuiltinId?: string
+  transport?: 'http' | 'websocket'
 }): AsyncIterable<SSEEvent> {
   const requestId = nanoid()
-  const { url, method, headers, body, signal, useSystemProxy, providerId, providerBuiltinId } =
-    params
+  const {
+    url,
+    method,
+    headers,
+    body,
+    signal,
+    useSystemProxy,
+    providerId,
+    providerBuiltinId,
+    transport
+  } = params
 
   const queue: QueueItem[] = []
   let resolve: (() => void) | null = null
@@ -165,7 +175,8 @@ export async function* ipcStreamRequest(params: {
     body,
     useSystemProxy,
     providerId,
-    providerBuiltinId
+    providerBuiltinId,
+    transport
   })
 
   let buffer = ''

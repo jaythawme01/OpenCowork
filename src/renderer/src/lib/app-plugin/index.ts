@@ -2,12 +2,16 @@ import { toolRegistry } from '@renderer/lib/agent/tool-registry'
 import { useAppPluginStore } from '@renderer/stores/app-plugin-store'
 import { desktopClickTool } from './desktop-click-tool'
 import { desktopScreenshotTool } from './desktop-screenshot-tool'
+import { desktopScrollTool } from './desktop-scroll-tool'
 import { desktopTypeTool } from './desktop-type-tool'
+import { desktopWaitTool } from './desktop-wait-tool'
 import { imageGenerateTool } from './image-tool'
 import {
   DESKTOP_CLICK_TOOL_NAME,
   DESKTOP_SCREENSHOT_TOOL_NAME,
+  DESKTOP_SCROLL_TOOL_NAME,
   DESKTOP_TYPE_TOOL_NAME,
+  DESKTOP_WAIT_TOOL_NAME,
   IMAGE_GENERATE_TOOL_NAME
 } from './types'
 
@@ -31,6 +35,8 @@ export function registerDesktopControlTools(): void {
   toolRegistry.register(desktopScreenshotTool)
   toolRegistry.register(desktopClickTool)
   toolRegistry.register(desktopTypeTool)
+  toolRegistry.register(desktopScrollTool)
+  toolRegistry.register(desktopWaitTool)
   desktopControlToolsRegistered = true
 }
 
@@ -39,6 +45,8 @@ export function unregisterDesktopControlTools(): void {
   toolRegistry.unregister(DESKTOP_SCREENSHOT_TOOL_NAME)
   toolRegistry.unregister(DESKTOP_CLICK_TOOL_NAME)
   toolRegistry.unregister(DESKTOP_TYPE_TOOL_NAME)
+  toolRegistry.unregister(DESKTOP_SCROLL_TOOL_NAME)
+  toolRegistry.unregister(DESKTOP_WAIT_TOOL_NAME)
   desktopControlToolsRegistered = false
 }
 

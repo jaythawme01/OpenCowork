@@ -18,6 +18,8 @@ import {
   DESKTOP_CLICK_TOOL_NAME,
   DESKTOP_CONTROL_PLUGIN_ID,
   DESKTOP_SCREENSHOT_TOOL_NAME,
+  DESKTOP_SCROLL_TOOL_NAME,
+  DESKTOP_WAIT_TOOL_NAME,
   IMAGE_GENERATE_TOOL_NAME,
   IMAGE_PLUGIN_ID,
   type AppPluginDescriptor,
@@ -83,9 +85,15 @@ export function AppPluginPanel(): React.JSX.Element {
     [providers]
   )
 
+  const visibleDescriptors = useMemo(
+    () => APP_PLUGIN_DESCRIPTORS.filter((d) => !d.hidden),
+    []
+  )
   const selectedPlugin = plugins.find((plugin) => plugin.id === selectedPluginId) ?? null
   const selectedDescriptor =
-    APP_PLUGIN_DESCRIPTORS.find((descriptor) => descriptor.id === selectedPluginId) ?? null
+    visibleDescriptors.find((descriptor) => descriptor.id === selectedPluginId) ??
+    visibleDescriptors[0] ??
+    null
   const overrideProvider = imageProviderGroups.find(
     (entry) => entry.provider.id === selectedPlugin?.providerId
   )
@@ -107,8 +115,8 @@ export function AppPluginPanel(): React.JSX.Element {
   const activeState = getPluginState({
     descriptor:
       selectedDescriptor ??
-      APP_PLUGIN_DESCRIPTORS.find((descriptor) => descriptor.id === IMAGE_PLUGIN_ID) ??
-      APP_PLUGIN_DESCRIPTORS[0],
+      visibleDescriptors.find((descriptor) => descriptor.id === IMAGE_PLUGIN_ID) ??
+      visibleDescriptors[0],
     pluginEnabled: Boolean(selectedPlugin?.enabled),
     isResolvedImageModelReady
   })
@@ -121,7 +129,7 @@ export function AppPluginPanel(): React.JSX.Element {
           <p className="mt-1 text-sm text-muted-foreground">{t('plugin.subtitle')}</p>
         </div>
         <div className="space-y-2">
-          {APP_PLUGIN_DESCRIPTORS.map((descriptor) => {
+          {visibleDescriptors.map((descriptor) => {
             const plugin = plugins.find((item) => item.id === descriptor.id)
             const selected = descriptor.id === selectedPluginId
             return (
@@ -215,7 +223,9 @@ export function AppPluginPanel(): React.JSX.Element {
                       null
                     const fallbackModelId = fallbackProviderId
                       ? (selectedPlugin.modelId ??
-                        (fallbackProviderId === activeImageProviderId ? activeImageModelId : null) ??
+                        (fallbackProviderId === activeImageProviderId
+                          ? activeImageModelId
+                          : null) ??
                         resolveDefaultImageModelId(fallbackProviderId))
                       : null
 
@@ -262,8 +272,9 @@ export function AppPluginPanel(): React.JSX.Element {
                             size={14}
                           />
                           <span>
-                            {globalImageProvider.models.find((model) => model.id === activeImageModelId)
-                              ?.name ?? activeImageModelId}
+                            {globalImageProvider.models.find(
+                              (model) => model.id === activeImageModelId
+                            )?.name ?? activeImageModelId}
                           </span>
                         </div>
                       </div>
@@ -304,7 +315,9 @@ export function AppPluginPanel(): React.JSX.Element {
                       <label className="text-xs font-medium">{t('plugin.model')}</label>
                       <Select
                         value={selectedPlugin.modelId ?? ''}
-                        onValueChange={(value) => updatePlugin(selectedPlugin.id, { modelId: value })}
+                        onValueChange={(value) =>
+                          updatePlugin(selectedPlugin.id, { modelId: value })
+                        }
                       >
                         <SelectTrigger className="mt-1 w-80 text-xs">
                           <SelectValue placeholder={t('plugin.selectModel')} />
@@ -365,6 +378,15 @@ export function AppPluginPanel(): React.JSX.Element {
                           <span className="rounded-full bg-muted px-2 py-0.5">button</span>
                           <span className="rounded-full bg-muted px-2 py-0.5">action</span>
                         </>
+                      ) : toolName === DESKTOP_SCROLL_TOOL_NAME ? (
+                        <>
+                          <span className="rounded-full bg-muted px-2 py-0.5">x</span>
+                          <span className="rounded-full bg-muted px-2 py-0.5">y</span>
+                          <span className="rounded-full bg-muted px-2 py-0.5">scrollX</span>
+                          <span className="rounded-full bg-muted px-2 py-0.5">scrollY</span>
+                        </>
+                      ) : toolName === DESKTOP_WAIT_TOOL_NAME ? (
+                        <span className="rounded-full bg-muted px-2 py-0.5">delayMs</span>
                       ) : (
                         <>
                           <span className="rounded-full bg-muted px-2 py-0.5">text</span>

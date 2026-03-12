@@ -37,4 +37,6 @@ export interface BuiltinProviderPreset {
   instructionsPrompt?: string
   /** Optional UI configuration for this provider */
   ui?: ProviderUiConfig
+  /** Prefer OpenAI Responses WebSocket transport when available (no system proxy) */
+  preferResponsesWebSocket?: boolean
 }

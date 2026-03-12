@@ -4,8 +4,19 @@ import type {
   StreamEvent,
   ToolDefinition,
   UnifiedMessage,
-  ContentBlock
+  ContentBlock,
+  ToolResultContent,
+  ToolUseBlock,
+  OpenAIComputerActionType,
+  ToolCallExtraContent
 } from './types'
+import {
+  DESKTOP_CLICK_TOOL_NAME,
+  DESKTOP_SCREENSHOT_TOOL_NAME,
+  DESKTOP_SCROLL_TOOL_NAME,
+  DESKTOP_TYPE_TOOL_NAME,
+  DESKTOP_WAIT_TOOL_NAME
+} from '../app-plugin/types'
 import { ipcStreamRequest, maskHeaders } from '../ipc/api-stream'
 import { loadPrompt } from '../prompts/prompt-loader'
 import { registerProvider } from './provider'
@@ -43,6 +54,26 @@ function applyBodyOverrides(body: Record<string, unknown>, config: ProviderConfi
   }
 }
 
+interface ComputerActionInputDescriptor {
+  toolName: string
+  input: Record<string, unknown>
+  extraContent: ToolCallExtraContent
+}
+
+interface PendingComputerUseTurn {
+  previousResponseId: string
+  input: unknown[]
+}
+
+interface ComputerUseToolMeta {
+  toolUseId: string
+  toolName: string
+  computerCallId: string
+  computerActionType: OpenAIComputerActionType
+  computerActionIndex: number
+  autoAddedScreenshot?: boolean
+}
+
 class OpenAIResponsesProvider implements APIProvider {
   readonly name = 'OpenAI Responses'
   readonly type = 'openai-responses' as const
@@ -57,26 +88,34 @@ class OpenAIResponsesProvider implements APIProvider {
     let firstTokenAt: number | null = null
     let outputTokens = 0
     const baseUrl = (config.baseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
+    const pendingComputerTurn = config.computerUseEnabled
+      ? this.extractPendingComputerUseTurn(messages)
+      : null
 
     const body: Record<string, unknown> = {
       model: config.model,
-      input: this.formatMessages(messages, config.systemPrompt, !!config.thinkingEnabled),
+      input: pendingComputerTurn
+        ? pendingComputerTurn.input
+        : this.formatMessages(messages, config.systemPrompt, !!config.thinkingEnabled),
       stream: true
     }
 
-    // Enable prompt caching for OpenAI endpoints to reduce costs
+    if (pendingComputerTurn) {
+      body.previous_response_id = pendingComputerTurn.previousResponseId
+    }
+
     if (config.sessionId) {
       body.prompt_cache_key = `opencowork-${config.sessionId}`
     }
 
-    if (tools.length > 0) {
-      body.tools = this.formatTools(tools)
+    const formattedTools = this.buildToolsPayload(tools, config)
+    if (formattedTools.length > 0) {
+      body.tools = formattedTools
     }
     if (config.temperature !== undefined) body.temperature = config.temperature
     if (config.serviceTier) body.service_tier = config.serviceTier
     if (config.maxTokens) body.max_output_tokens = config.maxTokens
 
-    // Merge thinking/reasoning params when enabled; explicit disable params when off
     if (config.thinkingEnabled && config.thinkingConfig) {
       Object.assign(body, config.thinkingConfig.bodyParams)
 
@@ -89,7 +128,7 @@ class OpenAIResponsesProvider implements APIProvider {
         reasoning.effort = config.reasoningEffort
       }
 
-      if (body.model !== "gpt-5.3-codex-spark") {
+      if (body.model !== 'gpt-5.3-codex-spark') {
         reasoning.summary = config.responseSummary ?? 'auto'
       }
       if (Object.keys(reasoning).length > 0) {
@@ -144,7 +183,6 @@ class OpenAIResponsesProvider implements APIProvider {
 
     const bodyStr = JSON.stringify(body)
 
-    // Yield debug info for dev mode inspection
     yield {
       type: 'request_debug',
       debugInfo: {
@@ -158,6 +196,7 @@ class OpenAIResponsesProvider implements APIProvider {
 
     const argBuffers = new Map<string, string>()
     const emittedThinkingEncrypted = new Set<string>()
+    const emittedComputerCallIds = new Set<string>()
     let emittedThinkingDelta = false
 
     const extractReasoningSummaryText = (summary: unknown): string => {
@@ -191,6 +230,7 @@ class OpenAIResponsesProvider implements APIProvider {
       }
     }
 
+    const transport = config.preferResponsesWebSocket ? 'websocket' : undefined
     for await (const sse of ipcStreamRequest({
       url,
       method: 'POST',
@@ -199,7 +239,8 @@ class OpenAIResponsesProvider implements APIProvider {
       signal,
       useSystemProxy: config.useSystemProxy,
       providerId: config.providerId,
-      providerBuiltinId: config.providerBuiltinId
+      providerBuiltinId: config.providerBuiltinId,
+      transport
     })) {
       if (!sse.data || sse.data === '[DONE]') continue
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -246,6 +287,13 @@ class OpenAIResponsesProvider implements APIProvider {
               toolCallId: data.item.call_id,
               toolName: data.item.name
             }
+          } else if (data.item?.type === 'computer_call') {
+            for (const event of this.buildComputerUseToolEvents(
+              data.item,
+              emittedComputerCallIds
+            )) {
+              yield event
+            }
           } else if (data.item?.type === 'reasoning') {
             const thinkingEncryptedEvent = tryBuildThinkingEncryptedEvent(
               data.item.encrypted_content ?? data.item.reasoning?.encrypted_content
@@ -257,6 +305,15 @@ class OpenAIResponsesProvider implements APIProvider {
           break
 
         case 'response.output_item.done': {
+          if (data.item?.type === 'computer_call') {
+            for (const event of this.buildComputerUseToolEvents(
+              data.item,
+              emittedComputerCallIds
+            )) {
+              yield event
+            }
+          }
+
           if (firstTokenAt === null) firstTokenAt = Date.now()
           if (!emittedThinkingDelta) {
             const thinkingEvent = tryBuildThinkingDeltaEvent(
@@ -277,7 +334,7 @@ class OpenAIResponsesProvider implements APIProvider {
         }
 
         case 'response.function_call_arguments.delta': {
-          yield { type: 'tool_call_delta', argumentsDelta: data.delta }
+          yield { type: 'tool_call_delta', toolCallId: data.call_id, argumentsDelta: data.delta }
           const key = data.item_id
           argBuffers.set(key, (argBuffers.get(key) ?? '') + data.delta)
           break
@@ -306,6 +363,12 @@ class OpenAIResponsesProvider implements APIProvider {
           const responseOutput = data.response?.output
           if (Array.isArray(responseOutput)) {
             for (const item of responseOutput) {
+              if (item?.type === 'computer_call') {
+                for (const event of this.buildComputerUseToolEvents(item, emittedComputerCallIds)) {
+                  yield event
+                }
+              }
+
               if (!emittedThinkingDelta) {
                 const thinkingEvent = tryBuildThinkingDeltaEvent(
                   extractReasoningSummaryText(item?.summary ?? item?.reasoning?.summary)
@@ -332,18 +395,19 @@ class OpenAIResponsesProvider implements APIProvider {
           yield {
             type: 'message_end',
             stopReason: data.response.status,
+            providerResponseId: data.response?.id,
             usage: data.response.usage
               ? {
-                inputTokens: rawInputTokens,
-                outputTokens: data.response.usage.output_tokens ?? 0,
-                contextTokens: rawInputTokens,
-                ...(cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {}),
-                ...(data.response.usage.output_tokens_details?.reasoning_tokens
-                  ? {
-                    reasoningTokens: data.response.usage.output_tokens_details.reasoning_tokens
-                  }
-                  : {})
-              }
+                  inputTokens: rawInputTokens,
+                  outputTokens: data.response.usage.output_tokens ?? 0,
+                  contextTokens: rawInputTokens,
+                  ...(cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {}),
+                  ...(data.response.usage.output_tokens_details?.reasoning_tokens
+                    ? {
+                        reasoningTokens: data.response.usage.output_tokens_details.reasoning_tokens
+                      }
+                    : {})
+                }
               : undefined,
             timing: {
               totalMs: requestCompletedAt - requestStartedAt,
@@ -383,7 +447,6 @@ class OpenAIResponsesProvider implements APIProvider {
 
       const blocks = m.content as ContentBlock[]
 
-      // Handle user messages with images → multi-part content
       if (m.role === 'user') {
         const hasImages = blocks.some((b) => b.type === 'image')
         if (hasImages) {
@@ -425,6 +488,9 @@ class OpenAIResponsesProvider implements APIProvider {
             }
             break
           case 'tool_use':
+            if (block.extraContent?.openaiResponses?.computerUse?.kind === 'computer_use') {
+              break
+            }
             input.push({
               type: 'function_call',
               call_id: block.id,
@@ -434,7 +500,9 @@ class OpenAIResponsesProvider implements APIProvider {
             })
             break
           case 'tool_result': {
-            // OpenAI Responses API function_call_output only supports string output
+            if (this.isComputerUseToolResultBlock(block, messages, m.id)) {
+              break
+            }
             let output: string
             if (Array.isArray(block.content)) {
               const textParts = block.content
@@ -463,20 +531,479 @@ class OpenAIResponsesProvider implements APIProvider {
   formatTools(tools: ToolDefinition[]): unknown[] {
     return tools.map((t) => ({
       type: 'function',
-      // Responses API uses internally tagged function tools (top-level name/parameters).
       name: t.name,
       description: t.description,
       parameters: this.normalizeToolSchema(t.inputSchema),
-      // Keep non-strict behavior for existing tool schemas (Chat Completions parity).
       strict: false
     }))
   }
 
-  /**
-   * OpenAI Responses requires a root object schema with `properties`.
-   * Our Task tool currently uses `oneOf` at the root, so collapse it into
-   * a single object schema for compatibility.
-   */
+  private buildToolsPayload(tools: ToolDefinition[], config: ProviderConfig): unknown[] {
+    const formattedTools = this.formatTools(tools)
+    if (!config.computerUseEnabled) return formattedTools
+    return [{ type: 'computer' }, ...formattedTools]
+  }
+
+  private buildComputerUseToolEvents(
+    item: {
+      call_id?: string
+      actions?: Array<Record<string, unknown>>
+    },
+    emittedComputerCallIds: Set<string>
+  ): StreamEvent[] {
+    const callId = typeof item.call_id === 'string' ? item.call_id : null
+    if (!callId || emittedComputerCallIds.has(callId)) return []
+    emittedComputerCallIds.add(callId)
+
+    const actions = Array.isArray(item.actions) ? item.actions : []
+    const descriptors = this.mapComputerActionsToToolCalls(callId, actions)
+    const events: StreamEvent[] = []
+
+    for (const descriptor of descriptors) {
+      const toolUseId = this.buildComputerToolUseId(
+        callId,
+        descriptor.extraContent.openaiResponses?.computerUse?.computerActionIndex ?? 0,
+        descriptor.toolName,
+        events.length
+      )
+      events.push({
+        type: 'tool_call_start',
+        toolCallId: toolUseId,
+        toolName: descriptor.toolName,
+        toolCallExtraContent: descriptor.extraContent
+      })
+      events.push({
+        type: 'tool_call_end',
+        toolCallId: toolUseId,
+        toolName: descriptor.toolName,
+        toolCallInput: descriptor.input,
+        toolCallExtraContent: descriptor.extraContent
+      })
+    }
+
+    return events
+  }
+
+  private mapComputerActionsToToolCalls(
+    callId: string,
+    actions: Array<Record<string, unknown>>
+  ): ComputerActionInputDescriptor[] {
+    const descriptors: ComputerActionInputDescriptor[] = []
+    let sawScreenshot = false
+
+    actions.forEach((action, index) => {
+      const actionType = this.getComputerActionType(action.type)
+      if (!actionType) return
+
+      if (actionType === 'screenshot') {
+        sawScreenshot = true
+        descriptors.push({
+          toolName: DESKTOP_SCREENSHOT_TOOL_NAME,
+          input: {},
+          extraContent: {
+            openaiResponses: {
+              computerUse: {
+                kind: 'computer_use',
+                computerCallId: callId,
+                computerActionType: actionType,
+                computerActionIndex: index
+              }
+            }
+          }
+        })
+        return
+      }
+
+      descriptors.push(...this.mapComputerActionDescriptor(callId, actionType, action, index))
+    })
+
+    if (!sawScreenshot) {
+      descriptors.push({
+        toolName: DESKTOP_SCREENSHOT_TOOL_NAME,
+        input: {},
+        extraContent: {
+          openaiResponses: {
+            computerUse: {
+              kind: 'computer_use',
+              computerCallId: callId,
+              computerActionType: 'screenshot',
+              computerActionIndex: actions.length,
+              autoAddedScreenshot: true
+            }
+          }
+        }
+      })
+    }
+
+    return descriptors
+  }
+
+  private mapComputerActionDescriptor(
+    callId: string,
+    actionType: Exclude<OpenAIComputerActionType, 'screenshot'>,
+    action: Record<string, unknown>,
+    index: number
+  ): ComputerActionInputDescriptor[] {
+    const computerUse = {
+      kind: 'computer_use' as const,
+      computerCallId: callId,
+      computerActionType: actionType,
+      computerActionIndex: index
+    }
+
+    if (actionType === 'click' || actionType === 'double_click') {
+      return [
+        {
+          toolName: DESKTOP_CLICK_TOOL_NAME,
+          input: {
+            x: Number(action.x ?? 0),
+            y: Number(action.y ?? 0),
+            button: typeof action.button === 'string' ? action.button : 'left',
+            action: actionType === 'double_click' ? 'double_click' : 'click'
+          },
+          extraContent: {
+            openaiResponses: {
+              computerUse
+            }
+          }
+        }
+      ]
+    }
+
+    if (actionType === 'scroll') {
+      return [
+        {
+          toolName: DESKTOP_SCROLL_TOOL_NAME,
+          input: {
+            ...(typeof action.x === 'number' ? { x: action.x } : {}),
+            ...(typeof action.y === 'number' ? { y: action.y } : {}),
+            scrollX: Number(action.scrollX ?? 0),
+            scrollY: Number(action.scrollY ?? 0)
+          },
+          extraContent: {
+            openaiResponses: {
+              computerUse
+            }
+          }
+        }
+      ]
+    }
+
+    if (actionType === 'type') {
+      return [
+        {
+          toolName: DESKTOP_TYPE_TOOL_NAME,
+          input: {
+            text: typeof action.text === 'string' ? action.text : ''
+          },
+          extraContent: {
+            openaiResponses: {
+              computerUse
+            }
+          }
+        }
+      ]
+    }
+
+    if (actionType === 'wait') {
+      return [
+        {
+          toolName: DESKTOP_WAIT_TOOL_NAME,
+          input: { delayMs: 2000 },
+          extraContent: {
+            openaiResponses: {
+              computerUse
+            }
+          }
+        }
+      ]
+    }
+
+    const keys = Array.isArray(action.keys)
+      ? action.keys.filter((item): item is string => typeof item === 'string')
+      : []
+    if (keys.length === 0) {
+      return []
+    }
+
+    const normalizedKeys = keys
+      .map((key) => this.normalizeComputerKey(key))
+      .filter((key): key is string => Boolean(key))
+
+    if (normalizedKeys.length === 0) {
+      return []
+    }
+
+    if (normalizedKeys.length === 1) {
+      return [
+        {
+          toolName: DESKTOP_TYPE_TOOL_NAME,
+          input: { key: normalizedKeys[0] },
+          extraContent: {
+            openaiResponses: {
+              computerUse
+            }
+          }
+        }
+      ]
+    }
+
+    const modifiers = normalizedKeys.slice(0, -1)
+    const mainKey = normalizedKeys[normalizedKeys.length - 1]
+    const modifierSet = new Set(['Control', 'Meta', 'Alt', 'Shift'])
+    if (modifiers.every((key) => modifierSet.has(key))) {
+      return [
+        {
+          toolName: DESKTOP_TYPE_TOOL_NAME,
+          input: { hotkey: [...modifiers, mainKey] },
+          extraContent: {
+            openaiResponses: {
+              computerUse
+            }
+          }
+        }
+      ]
+    }
+
+    return normalizedKeys.map((key, keyIndex) => ({
+      toolName: DESKTOP_TYPE_TOOL_NAME,
+      input: { key },
+      extraContent: {
+        openaiResponses: {
+          computerUse: {
+            ...computerUse,
+            computerActionIndex: index * 100 + keyIndex
+          }
+        }
+      }
+    }))
+  }
+
+  private getComputerActionType(value: unknown): OpenAIComputerActionType | null {
+    switch (value) {
+      case 'click':
+      case 'double_click':
+      case 'scroll':
+      case 'keypress':
+      case 'type':
+      case 'wait':
+      case 'screenshot':
+        return value
+      default:
+        return null
+    }
+  }
+
+  private normalizeComputerKey(key: string): string | null {
+    const normalized = key.trim().toUpperCase()
+    const map: Record<string, string> = {
+      ENTER: 'Enter',
+      TAB: 'Tab',
+      ESCAPE: 'Escape',
+      ESC: 'Escape',
+      BACKSPACE: 'Backspace',
+      DELETE: 'Delete',
+      UP: 'ArrowUp',
+      ARROWUP: 'ArrowUp',
+      DOWN: 'ArrowDown',
+      ARROWDOWN: 'ArrowDown',
+      LEFT: 'ArrowLeft',
+      ARROWLEFT: 'ArrowLeft',
+      RIGHT: 'ArrowRight',
+      ARROWRIGHT: 'ArrowRight',
+      HOME: 'Home',
+      END: 'End',
+      PAGEUP: 'PageUp',
+      PAGEDOWN: 'PageDown',
+      SPACE: 'Space',
+      CTRL: 'Control',
+      CONTROL: 'Control',
+      CMD: 'Meta',
+      COMMAND: 'Meta',
+      META: 'Meta',
+      ALT: 'Alt',
+      OPTION: 'Alt',
+      SHIFT: 'Shift'
+    }
+
+    if (map[normalized]) return map[normalized]
+    if (/^[A-Z0-9]$/.test(normalized)) return normalized
+    const functionKey = normalized.match(/^F([1-9]|1[0-2])$/)
+    if (functionKey) return `F${functionKey[1]}`
+    return null
+  }
+
+  private buildComputerToolUseId(
+    callId: string,
+    actionIndex: number,
+    toolName: string,
+    suffix: number
+  ): string {
+    const safeToolName = toolName.replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase()
+    return `${callId}__${actionIndex}__${safeToolName}__${suffix}`
+  }
+
+  private extractPendingComputerUseTurn(messages: UnifiedMessage[]): PendingComputerUseTurn | null {
+    const lastMessage = messages.at(-1)
+    const previousMessage = messages.at(-2)
+    if (!lastMessage || !previousMessage) return null
+    if (lastMessage.role !== 'user' || previousMessage.role !== 'assistant') return null
+    if (!previousMessage.providerResponseId) return null
+    if (!Array.isArray(previousMessage.content) || !Array.isArray(lastMessage.content)) return null
+
+    const computerToolMetas = this.collectComputerToolMetas(previousMessage.content)
+    if (computerToolMetas.length === 0) return null
+
+    const toolMetaById = new Map(computerToolMetas.map((item) => [item.toolUseId, item]))
+    const functionToolUseIds = new Set(
+      previousMessage.content
+        .filter(
+          (block): block is ToolUseBlock =>
+            block.type === 'tool_use' && !this.isComputerUseToolBlock(block)
+        )
+        .map((block) => block.id)
+    )
+
+    const functionOutputs: unknown[] = []
+    const computerResults = lastMessage.content.filter(
+      (block): block is Extract<ContentBlock, { type: 'tool_result' }> => {
+        if (block.type !== 'tool_result') return false
+        if (functionToolUseIds.has(block.toolUseId)) {
+          functionOutputs.push({
+            type: 'function_call_output',
+            call_id: block.toolUseId,
+            output: this.stringifyToolResult(block.content)
+          })
+        }
+        return toolMetaById.has(block.toolUseId)
+      }
+    )
+
+    if (computerResults.length === 0) return null
+
+    const screenshotMeta = [...computerToolMetas]
+      .sort((a, b) => a.computerActionIndex - b.computerActionIndex)
+      .reverse()
+      .find((item) => item.toolName === DESKTOP_SCREENSHOT_TOOL_NAME)
+
+    const screenshotResult = screenshotMeta
+      ? computerResults.find((result) => result.toolUseId === screenshotMeta.toolUseId)
+      : null
+
+    const screenshotDataUrl = screenshotResult
+      ? this.extractScreenshotDataUrlFromToolResult(screenshotResult.content)
+      : null
+
+    if (screenshotMeta && screenshotDataUrl) {
+      return {
+        previousResponseId: previousMessage.providerResponseId,
+        input: [
+          ...functionOutputs,
+          {
+            type: 'computer_call_output',
+            call_id: screenshotMeta.computerCallId,
+            output: {
+              type: 'computer_screenshot',
+              image_url: screenshotDataUrl,
+              detail: 'original'
+            }
+          }
+        ]
+      }
+    }
+
+    const errorText = computerResults
+      .map((result) => this.extractToolErrorText(result.content))
+      .filter((item): item is string => Boolean(item))
+      .join('\n')
+
+    return {
+      previousResponseId: previousMessage.providerResponseId,
+      input: [
+        ...functionOutputs,
+        {
+          type: 'message',
+          role: 'user',
+          content:
+            errorText ||
+            'Computer use could not capture a follow-up screenshot after executing the requested actions.'
+        }
+      ]
+    }
+  }
+
+  private collectComputerToolMetas(blocks: ContentBlock[]): ComputerUseToolMeta[] {
+    return blocks
+      .filter((block): block is ToolUseBlock => this.isComputerUseToolBlock(block))
+      .map((block) => ({
+        toolUseId: block.id,
+        toolName: block.name,
+        computerCallId: block.extraContent!.openaiResponses!.computerUse!.computerCallId,
+        computerActionType: block.extraContent!.openaiResponses!.computerUse!.computerActionType,
+        computerActionIndex: block.extraContent!.openaiResponses!.computerUse!.computerActionIndex,
+        autoAddedScreenshot: block.extraContent!.openaiResponses!.computerUse!.autoAddedScreenshot
+      }))
+  }
+
+  private isComputerUseToolBlock(block: ContentBlock): block is ToolUseBlock {
+    return (
+      block.type === 'tool_use' &&
+      block.extraContent?.openaiResponses?.computerUse?.kind === 'computer_use'
+    )
+  }
+
+  private isComputerUseToolResultBlock(
+    block: Extract<ContentBlock, { type: 'tool_result' }>,
+    messages: UnifiedMessage[],
+    currentMessageId: string
+  ): boolean {
+    const currentIndex = messages.findIndex((message) => message.id === currentMessageId)
+    if (currentIndex <= 0) return false
+    const previousMessage = messages[currentIndex - 1]
+    if (!previousMessage || !Array.isArray(previousMessage.content)) return false
+    return previousMessage.content.some(
+      (candidate) =>
+        candidate.type === 'tool_use' &&
+        candidate.id === block.toolUseId &&
+        candidate.extraContent?.openaiResponses?.computerUse?.kind === 'computer_use'
+    )
+  }
+
+  private extractScreenshotDataUrlFromToolResult(content: ToolResultContent): string | null {
+    if (!Array.isArray(content)) return null
+    const imageBlock = content.find((block) => block.type === 'image')
+    if (!imageBlock || imageBlock.type !== 'image') return null
+    if (imageBlock.source.type === 'url' && imageBlock.source.url) {
+      return imageBlock.source.url
+    }
+    if (imageBlock.source.type === 'base64' && imageBlock.source.data) {
+      return `data:${imageBlock.source.mediaType || 'image/png'};base64,${imageBlock.source.data}`
+    }
+    return null
+  }
+
+  private stringifyToolResult(content: ToolResultContent): string {
+    if (typeof content === 'string') return content
+    const textParts = content
+      .filter((block) => block.type === 'text')
+      .map((block) => (block.type === 'text' ? block.text : ''))
+    const imageParts = content.filter((block) => block.type === 'image')
+    return [...textParts, ...imageParts.map(() => '[Image attached]')].join('\n') || '[Image]'
+  }
+
+  private extractToolErrorText(content: ToolResultContent): string | null {
+    if (typeof content !== 'string') return null
+    try {
+      const parsed = JSON.parse(content) as { error?: unknown }
+      if (typeof parsed.error === 'string' && parsed.error.trim()) {
+        return parsed.error
+      }
+    } catch {
+      return content.trim() || null
+    }
+    return null
+  }
+
   private normalizeToolSchema(schema: ToolDefinition['inputSchema']): Record<string, unknown> {
     if ('properties' in schema) return schema
 

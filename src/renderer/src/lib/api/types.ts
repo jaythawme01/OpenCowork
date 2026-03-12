@@ -48,16 +48,36 @@ export interface ImageErrorBlock {
   message: string
 }
 
+export type OpenAIComputerActionType =
+  | 'click'
+  | 'double_click'
+  | 'scroll'
+  | 'keypress'
+  | 'type'
+  | 'wait'
+  | 'screenshot'
+
+export interface ToolCallExtraContent {
+  google?: {
+    thought_signature?: string
+  }
+  openaiResponses?: {
+    computerUse?: {
+      kind: 'computer_use'
+      computerCallId: string
+      computerActionType: OpenAIComputerActionType
+      computerActionIndex: number
+      autoAddedScreenshot?: boolean
+    }
+  }
+}
+
 export interface ToolUseBlock {
   type: 'tool_use'
   id: string
   name: string
   input: Record<string, unknown>
-  extraContent?: {
-    google?: {
-      thought_signature?: string
-    }
-  }
+  extraContent?: ToolCallExtraContent
 }
 
 export type ToolResultContent = string | Array<TextBlock | ImageBlock>
@@ -105,6 +125,8 @@ export interface UnifiedMessage {
   createdAt: number
   usage?: TokenUsage
   debugInfo?: RequestDebugInfo
+  /** Provider-native response ID for follow-up requests such as OpenAI Responses previous_response_id. */
+  providerResponseId?: string
   /** Optional source marker for non-manual message insertion paths. */
   source?: 'team' | 'queued'
 }
@@ -135,16 +157,13 @@ export interface StreamEvent {
   toolName?: string
   argumentsDelta?: string
   toolCallInput?: Record<string, unknown>
-  toolCallExtraContent?: {
-    google?: {
-      thought_signature?: string
-    }
-  }
+  toolCallExtraContent?: ToolCallExtraContent
   imageBlock?: ImageBlock
   imageError?: { code: ImageErrorCode; message: string }
   stopReason?: string
   usage?: TokenUsage
   timing?: RequestTiming
+  providerResponseId?: string
   error?: { type: string; message: string }
   debugInfo?: RequestDebugInfo
 }
@@ -195,7 +214,12 @@ export interface ThinkingConfig {
 
 // --- AI Provider Management ---
 
-export type ProviderType = 'anthropic' | 'openai-chat' | 'openai-responses' | 'openai-images' | 'gemini'
+export type ProviderType =
+  | 'anthropic'
+  | 'openai-chat'
+  | 'openai-responses'
+  | 'openai-images'
+  | 'gemini'
 export type ResponseSummary = 'auto' | 'concise' | 'detailed'
 
 export type AuthMode = 'apiKey' | 'oauth' | 'channel'
@@ -276,6 +300,10 @@ export interface AIModelConfig {
   supportsFunctionCall?: boolean
   /** Whether the model supports toggleable thinking/reasoning mode */
   supportsThinking?: boolean
+  /** Whether the model supports OpenAI Computer Use via the Responses API */
+  supportsComputerUse?: boolean
+  /** Whether Computer Use is enabled for this model */
+  enableComputerUse?: boolean
   /** Configuration describing how to enable thinking for this model */
   thinkingConfig?: ThinkingConfig
   /** OpenAI Responses: summary of reasoning (auto/concise/detailed) */
@@ -338,6 +366,8 @@ export interface AIProvider {
   instructionsPrompt?: string
   /** Optional UI configuration for this provider */
   ui?: ProviderUiConfig
+  /** Prefer OpenAI Responses WebSocket transport when available (ignored when useSystemProxy) */
+  preferResponsesWebSocket?: boolean
 }
 
 // --- Provider Config ---
@@ -372,6 +402,8 @@ export interface ProviderConfig {
   responseSummary?: ResponseSummary
   /** OpenAI Responses: enable prompt caching with session-based key */
   enablePromptCache?: boolean
+  /** Whether OpenAI Computer Use should be enabled for this request */
+  computerUseEnabled?: boolean
   /** Anthropic: enable system prompt caching */
   enableSystemPromptCache?: boolean
   /** Custom User-Agent header (e.g. Moonshot套餐 requires 'RooCode/3.48.0') */
@@ -384,6 +416,8 @@ export interface ProviderConfig {
   organization?: string
   /** OpenAI project header */
   project?: string
+  /** Prefer OpenAI Responses WebSocket transport when available */
+  preferResponsesWebSocket?: boolean
 }
 
 // --- Provider Interface ---

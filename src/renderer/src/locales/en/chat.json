@@ -164,12 +164,24 @@
       "DesktopType": {
         "title": "Desktop Type"
       },
+      "DesktopScroll": {
+        "title": "Desktop Scroll"
+      },
+      "DesktopWait": {
+        "title": "Desktop Wait"
+      },
       "screenshot": {
         "summary": "{{width}} × {{height}}",
         "preview": "Screenshot preview"
       },
       "click": {
         "summary": "{{action}} @ ({{x}}, {{y}})"
+      },
+      "scroll": {
+        "summary": "Scroll ({{scrollX}}, {{scrollY}})"
+      },
+      "wait": {
+        "summary": "Wait {{delayMs}}ms"
       },
       "type": {
         "summary": "Mode: {{mode}}"

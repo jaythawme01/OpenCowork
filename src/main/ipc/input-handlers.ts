@@ -3,6 +3,7 @@ import * as robot from '@jitsi/robotjs'
 
 const DESKTOP_INPUT_CLICK = 'desktop:input:click'
 const DESKTOP_INPUT_TYPE = 'desktop:input:type'
+const DESKTOP_INPUT_SCROLL = 'desktop:input:scroll'
 
 // Maps our key names (from the tool schema) to robotjs key names
 const KEY_MAP: Record<string, string> = {
@@ -45,6 +46,13 @@ interface TypeArgs {
   text?: string | null
   key?: string | null
   hotkey?: string[] | null
+}
+
+interface ScrollArgs {
+  x?: number | null
+  y?: number | null
+  scrollX?: number | null
+  scrollY?: number | null
 }
 
 function isPointInsideDesktop(x: number, y: number): boolean {
@@ -135,6 +143,48 @@ export function registerInputHandlers(): void {
       }
 
       return { success: false, error: 'Desktop input requires text, key, or hotkey.' }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  ipcMain.handle(DESKTOP_INPUT_SCROLL, (_event, args: ScrollArgs) => {
+    try {
+      const x = args.x == null ? null : Number(args.x)
+      const y = args.y == null ? null : Number(args.y)
+      const scrollX = Number(args.scrollX ?? 0)
+      const scrollY = Number(args.scrollY ?? 0)
+
+      if (!Number.isFinite(scrollX) || !Number.isFinite(scrollY)) {
+        return { success: false, error: 'Invalid scroll delta.' }
+      }
+
+      if (x !== null || y !== null) {
+        if (x === null || y === null || !Number.isFinite(x) || !Number.isFinite(y)) {
+          return { success: false, error: 'Invalid scroll anchor coordinates.' }
+        }
+        if (!isPointInsideDesktop(x, y)) {
+          return {
+            success: false,
+            error: `Coordinate (${x}, ${y}) is outside the desktop bounds.`
+          }
+        }
+        robot.setMouseDelay(0)
+        robot.moveMouse(Math.round(x), Math.round(y))
+      }
+
+      robot.scrollMouse(Math.round(scrollX), Math.round(scrollY))
+
+      return {
+        success: true,
+        x: x ?? undefined,
+        y: y ?? undefined,
+        scrollX,
+        scrollY
+      }
     } catch (error) {
       return {
         success: false,

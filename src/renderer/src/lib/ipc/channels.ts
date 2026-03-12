@@ -169,6 +169,7 @@ export const IPC = {
   DESKTOP_SCREENSHOT_CAPTURE: 'desktop:screenshot:capture',
   DESKTOP_INPUT_CLICK: 'desktop:input:click',
   DESKTOP_INPUT_TYPE: 'desktop:input:type',
+  DESKTOP_INPUT_SCROLL: 'desktop:input:scroll',
 
   // Web Search
   WEB_SEARCH: 'web:search',
