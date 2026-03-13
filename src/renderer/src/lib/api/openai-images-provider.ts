@@ -6,15 +6,18 @@ import type {
   ToolDefinition,
   UnifiedMessage,
   ContentBlock,
-  ImageBlock,
+  ImageBlock
 } from './types'
 import {
   generateImagesFromText,
   editImageWithPrompt,
   OpenAIImagesRequestError,
   type Base64ImageInput,
+  type GeneratedImage
 } from './openai-images'
 import { registerProvider } from './provider'
+import { ipcClient } from '../ipc/ipc-client'
+import { IPC } from '../ipc/channels'
 
 function normalizeImageProviderError(error: unknown): { code: ImageErrorCode; message: string } {
   if (error instanceof OpenAIImagesRequestError) {
@@ -34,6 +37,49 @@ function normalizeImageProviderError(error: unknown): { code: ImageErrorCode; me
   return {
     code: 'unknown',
     message: error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function persistGeneratedImage(image: GeneratedImage): Promise<ImageBlock> {
+  const fallback: ImageBlock = {
+    type: 'image',
+    source:
+      image.sourceType === 'base64'
+        ? { type: 'base64', mediaType: image.mediaType, data: image.data }
+        : { type: 'url', url: image.data }
+  }
+
+  try {
+    const result = (await ipcClient.invoke(IPC.IMAGE_PERSIST_GENERATED, {
+      ...(image.sourceType === 'base64'
+        ? { data: image.data, mediaType: image.mediaType }
+        : { url: image.data })
+    })) as {
+      filePath?: string
+      mediaType?: string
+      data?: string
+      error?: string
+    }
+
+    if (result?.error || !result?.data) {
+      if (result?.error) {
+        console.warn('[OpenAI Images Provider] Failed to persist generated image:', result.error)
+      }
+      return fallback
+    }
+
+    return {
+      type: 'image',
+      source: {
+        type: 'base64',
+        mediaType: result.mediaType || image.mediaType || 'image/png',
+        data: result.data,
+        filePath: result.filePath
+      }
+    }
+  } catch (error) {
+    console.warn('[OpenAI Images Provider] Failed to persist generated image:', error)
+    return fallback
   }
 }
 
@@ -81,7 +127,7 @@ class OpenAIImagesProvider implements APIProvider {
             if (imgBlock.source.type === 'base64') {
               imageInput = {
                 dataUrl: `data:${imgBlock.source.mediaType || 'image/png'};base64,${imgBlock.source.data}`,
-                mediaType: imgBlock.source.mediaType,
+                mediaType: imgBlock.source.mediaType
               }
             } else if (imgBlock.source.type === 'url' && imgBlock.source.url) {
               // For URL images, we'd need to fetch and convert to base64
@@ -104,26 +150,20 @@ class OpenAIImagesProvider implements APIProvider {
           config,
           prompt: textPrompt,
           image: imageInput,
-          signal,
+          signal
         })
       } else {
         // Text-to-image generation - no text delta, just generate
         results = await generateImagesFromText({
           config,
           prompt: textPrompt,
-          signal,
+          signal
         })
       }
 
       // Yield each generated image as an image_generated event
       for (const img of results) {
-        const imageBlock: ImageBlock = {
-          type: 'image',
-          source:
-            img.sourceType === 'base64'
-              ? { type: 'base64', mediaType: img.mediaType, data: img.data }
-              : { type: 'url', url: img.data },
-        }
+        const imageBlock = await persistGeneratedImage(img)
         yield { type: 'image_generated', imageBlock }
       }
 
@@ -134,8 +174,8 @@ class OpenAIImagesProvider implements APIProvider {
         stopReason: 'stop',
         timing: {
           totalMs: requestCompletedAt - requestStartedAt,
-          ttftMs: requestCompletedAt - requestStartedAt,
-        },
+          ttftMs: requestCompletedAt - requestStartedAt
+        }
       }
     } catch (error) {
       const normalizedError = normalizeImageProviderError(error)
@@ -156,8 +196,8 @@ class OpenAIImagesProvider implements APIProvider {
         stopReason: 'error',
         timing: {
           totalMs: requestCompletedAt - requestStartedAt,
-          ttftMs: requestCompletedAt - requestStartedAt,
-        },
+          ttftMs: requestCompletedAt - requestStartedAt
+        }
       }
 
       return

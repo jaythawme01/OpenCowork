@@ -1,12 +1,4 @@
-import {
-  CalendarDays,
-  Image,
-  Languages,
-  MessageSquare,
-  Monitor,
-  Settings,
-  Wand2
-} from 'lucide-react'
+import { CalendarDays, Image, MessageSquare, Monitor, Settings, Wand2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { useUIStore, type NavItem } from '@renderer/stores/ui-store'
@@ -18,7 +10,6 @@ const navItems: { value: NavItem; icon: React.ReactNode; labelKey: string }[] = 
   { value: 'tasks', icon: <CalendarDays className="size-5" />, labelKey: 'navRail.tasks' },
   { value: 'skills', icon: <Wand2 className="size-5" />, labelKey: 'navRail.skills' },
   { value: 'draw', icon: <Image className="size-5" />, labelKey: 'navRail.draw' },
-  { value: 'translate', icon: <Languages className="size-5" />, labelKey: 'navRail.translate' },
   { value: 'ssh', icon: <Monitor className="size-5" />, labelKey: 'navRail.ssh' }
 ]
 

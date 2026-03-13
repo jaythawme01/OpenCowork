@@ -1,9 +1,10 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
-import { ChevronDown, Check, Search, Eye, Wrench, Brain, Settings2, Zap } from 'lucide-react'
+import { ChevronDown, Check, Search, Eye, Wrench, Brain, Settings2, Zap, MonitorSmartphone } from 'lucide-react'
 import { useProviderStore, modelSupportsVision } from '@renderer/stores/provider-store'
 import { useSettingsStore } from '@renderer/stores/settings-store'
 import { useChatStore } from '@renderer/stores/chat-store'
 import { useChannelStore } from '@renderer/stores/channel-store'
+import { useQuotaStore } from '@renderer/stores/quota-store'
 
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
@@ -265,6 +266,7 @@ function ModelSettingsPopover({
 export function ModelSwitcher(): React.JSX.Element {
   const { t } = useTranslation('layout')
   const { t: tChat } = useTranslation('chat')
+  const { t: tSettings } = useTranslation('settings')
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -273,10 +275,26 @@ export function ModelSwitcher(): React.JSX.Element {
   const providers = useProviderStore((s) => s.providers)
   const setActiveProvider = useProviderStore((s) => s.setActiveProvider)
   const setActiveModel = useProviderStore((s) => s.setActiveModel)
+  const quotaByKey = useQuotaStore((s) => s.quotaByKey)
 
   const enabledProviders = providers.filter((p) => p.enabled)
   const activeProvider = providers.find((p) => p.id === activeProviderId)
   const activeModel = activeProvider?.models.find((m) => m.id === activeModelId)
+
+  const codexQuota = useMemo(() => {
+    if (!activeProvider || activeProvider.builtinId !== 'codex-oauth') return null
+    return (
+      quotaByKey[activeProvider.id] ||
+      (activeProvider.builtinId ? quotaByKey[activeProvider.builtinId] : undefined) ||
+      quotaByKey['codex'] ||
+      null
+    )
+  }, [activeProvider, quotaByKey])
+
+  const formatPercent = (value?: number): string => {
+    if (value === undefined || Number.isNaN(value)) return '0%'
+    return `${Math.round(value)}%`
+  }
 
   useEffect(() => {
     if (open) {
@@ -404,6 +422,74 @@ export function ModelSwitcher(): React.JSX.Element {
           </div>
         </PopoverContent>
       </Popover>
+
+      {/* Quota Indicator */}
+      {codexQuota && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/30 border border-border/10 cursor-help hover:bg-muted/50 transition-colors mx-1">
+              <MonitorSmartphone className="size-3 text-emerald-500" />
+              <div className="flex flex-col leading-none gap-0.5">
+                <div className="h-1 w-10 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{ width: `${Math.min(100, codexQuota.primary?.usedPercent ?? 0)}%` }}
+                  />
+                </div>
+                <span className="text-[9px] text-muted-foreground/60 font-medium">
+                  {formatPercent(codexQuota.primary?.usedPercent)}
+                </span>
+              </div>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="p-3 w-48 space-y-2">
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                {tSettings('provider.codexQuotaPrimary')}
+              </p>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold">
+                  {formatPercent(codexQuota.primary?.usedPercent)}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {codexQuota.primary?.resetAt
+                    ? new Date(codexQuota.primary.resetAt).toLocaleString([], {
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })
+                    : ''}
+                </span>
+              </div>
+              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500"
+                  style={{ width: `${Math.min(100, codexQuota.primary?.usedPercent ?? 0)}%` }}
+                />
+              </div>
+            </div>
+            {codexQuota.secondary && (
+              <div className="space-y-1 pt-1 border-t">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {tSettings('provider.codexQuotaSecondary')}
+                </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold">
+                    {formatPercent(codexQuota.secondary.usedPercent)}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500"
+                    style={{ width: `${Math.min(100, codexQuota.secondary.usedPercent ?? 0)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Settings icon — model config popover */}
       <ModelSettingsPopover model={activeModel} t={t} tChat={tChat} />

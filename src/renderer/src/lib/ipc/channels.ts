@@ -165,6 +165,9 @@ export const IPC = {
   // Clipboard
   CLIPBOARD_WRITE_IMAGE: 'clipboard:write-image',
 
+  // Images
+  IMAGE_PERSIST_GENERATED: 'image:persist-generated',
+
   // Desktop Control
   DESKTOP_SCREENSHOT_CAPTURE: 'desktop:screenshot:capture',
   DESKTOP_INPUT_CLICK: 'desktop:input:click',

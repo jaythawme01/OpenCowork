@@ -874,7 +874,7 @@ export function AssistantMessage({
           <ScaleIn key={key} className="w-full origin-left">
             <ImagePluginToolCard
               input={block.input}
-              output={liveTc?.output ?? result?.content}
+              output={result?.content ?? liveTc?.output}
               status={liveTc?.status ?? (result?.isError ? 'error' : 'completed')}
               error={liveTc?.error}
             />

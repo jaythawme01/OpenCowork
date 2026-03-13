@@ -37,7 +37,13 @@ export interface TextBlock {
 
 export interface ImageBlock {
   type: 'image'
-  source: { type: 'base64' | 'url'; mediaType?: string; data?: string; url?: string }
+  source: {
+    type: 'base64' | 'url'
+    mediaType?: string
+    data?: string
+    url?: string
+    filePath?: string
+  }
 }
 
 export type ImageErrorCode = 'timeout' | 'network' | 'request_aborted' | 'api_error' | 'unknown'

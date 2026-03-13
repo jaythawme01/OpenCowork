@@ -756,7 +756,65 @@ function ProviderConfigPanel({ provider }: { provider: AIProvider }): React.JSX.
     if (!value) return null
     const parsed = new Date(value)
     if (Number.isNaN(parsed.getTime())) return value
-    return parsed.toLocaleString()
+    return parsed.toLocaleString([], {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })
+  }
+
+  const QuotaProgressBar = ({
+    label,
+    window
+  }: {
+    label: string
+    window?: CodexQuotaWindow
+  }): React.JSX.Element | null => {
+    if (!window) return null
+    const percent = window.usedPercent ?? 0
+    const resetAt = formatResetAt(window.resetAt)
+    const windowMinutes = formatDurationMinutes(window.windowMinutes)
+
+    let remainingText = ''
+    if (window.resetAfterSeconds !== undefined && Number.isFinite(window.resetAfterSeconds)) {
+      const minutes = Math.max(1, Math.ceil(window.resetAfterSeconds / 60))
+      if (minutes < 60) {
+        remainingText = t('provider.codexQuotaResetIn', { time: `${minutes}m` })
+      } else if (minutes < 1440) {
+        remainingText = t('provider.codexQuotaResetIn', { time: `${Math.floor(minutes / 60)}h` })
+      } else {
+        remainingText = t('provider.codexQuotaResetIn', { time: `${Math.floor(minutes / 1440)}d` })
+      }
+    }
+
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="font-medium text-foreground/90">{label}</span>
+          <div className="flex items-center gap-2">
+            <span className="font-bold">{Math.round(percent)}%</span>
+            {(resetAt || remainingText) && (
+              <span className="text-muted-foreground/60">{resetAt || remainingText}</span>
+            )}
+          </div>
+        </div>
+        <div className="h-2 w-full bg-muted/50 rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all duration-500 rounded-full ${
+              percent >= 100 ? 'bg-destructive' : percent >= 80 ? 'bg-amber-500' : 'bg-emerald-500'
+            }`}
+            style={{ width: `${Math.min(100, percent)}%` }}
+          />
+        </div>
+        {windowMinutes && (
+          <div className="text-[10px] text-muted-foreground/50 text-right">
+            {t('provider.codexQuotaWindow', { time: windowMinutes })}
+          </div>
+        )}
+      </div>
+    )
   }
   const formatQuotaWindow = (window?: CodexQuotaWindow): string => {
     if (!window) return '-'
@@ -1490,9 +1548,41 @@ function ProviderConfigPanel({ provider }: { provider: AIProvider }): React.JSX.
         )}
 
         {isOAuthAuth && isCodexProvider && (
-          <section className="space-y-2">
+          <section className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">{t('provider.codexQuotaTitle')}</label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">{t('provider.codexQuotaTitle')}</label>
+                {codexQuota && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button className="text-muted-foreground hover:text-foreground transition-colors">
+                        <MonitorSmartphone className="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="p-3 max-w-xs space-y-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-xs text-muted-foreground">
+                          {t('provider.codexQuotaPlan')}
+                        </span>
+                        <span className="text-xs font-semibold">{codexQuota.planType || '-'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 border-t pt-2">
+                        <span className="text-xs text-muted-foreground">
+                          {t('provider.codexQuotaCredits')}
+                        </span>
+                        <span className="text-xs font-mono">{formatCredits(codexQuota)}</span>
+                      </div>
+                      {codexQuota.primaryOverSecondaryLimitPercent !== undefined && (
+                        <div className="text-[10px] text-muted-foreground border-t pt-2">
+                          {t('provider.codexQuotaLimitOver', {
+                            percent: formatPercent(codexQuota.primaryOverSecondaryLimitPercent) ?? '-'
+                          })}
+                        </div>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -1509,30 +1599,15 @@ function ProviderConfigPanel({ provider }: { provider: AIProvider }): React.JSX.
               </Button>
             </div>
             {codexQuota ? (
-              <div className="rounded-md border bg-muted/30 p-2 text-[11px] space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t('provider.codexQuotaPlan')}</span>
-                  <span className="font-medium">{codexQuota.planType || '-'}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t('provider.codexQuotaPrimary')}</span>
-                  <span className="font-mono">{formatQuotaWindow(codexQuota.primary)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t('provider.codexQuotaSecondary')}</span>
-                  <span className="font-mono">{formatQuotaWindow(codexQuota.secondary)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t('provider.codexQuotaCredits')}</span>
-                  <span className="font-medium">{formatCredits(codexQuota)}</span>
-                </div>
-                {codexQuota.primaryOverSecondaryLimitPercent !== undefined && (
-                  <div className="text-muted-foreground">
-                    {t('provider.codexQuotaLimitOver', {
-                      percent: formatPercent(codexQuota.primaryOverSecondaryLimitPercent) ?? '-'
-                    })}
-                  </div>
-                )}
+              <div className="space-y-4">
+                <QuotaProgressBar
+                  label={t('provider.codexQuotaPrimary')}
+                  window={codexQuota.primary}
+                />
+                <QuotaProgressBar
+                  label={t('provider.codexQuotaSecondary')}
+                  window={codexQuota.secondary}
+                />
               </div>
             ) : (
               <p className="text-[11px] text-muted-foreground">

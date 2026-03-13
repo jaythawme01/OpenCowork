@@ -12,7 +12,8 @@ import {
   Camera,
   Check,
   Pencil,
-  Globe
+  Globe,
+  Languages
 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
@@ -41,6 +42,7 @@ export function TitleBar(): React.JSX.Element {
   const userAvatar = useSettingsStore((s) => s.userAvatar)
   const userName = useSettingsStore((s) => s.userName)
   const language = useSettingsStore((s) => s.language)
+  const translatePageOpen = useUIStore((s) => s.translatePageOpen)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isEditingName, setIsEditingName] = useState(false)
   const [editName, setEditName] = useState(userName)
@@ -250,6 +252,16 @@ export function TitleBar(): React.JSX.Element {
 
             {/* Menu items */}
             <div className="border-t px-1 py-1">
+              <button
+                onClick={() => useUIStore.getState().openTranslatePage()}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors',
+                  translatePageOpen && 'bg-muted text-foreground'
+                )}
+              >
+                <Languages className="size-3.5" />
+                {t('navRail.translate')}
+              </button>
               <button
                 onClick={toggleTheme}
                 className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"

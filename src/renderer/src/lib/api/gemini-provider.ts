@@ -1,5 +1,6 @@
 import type {
   APIProvider,
+  ImageBlock,
   ImageErrorCode,
   ProviderConfig,
   StreamEvent,
@@ -8,6 +9,8 @@ import type {
   ContentBlock
 } from './types'
 import { maskHeaders } from '../ipc/api-stream'
+import { ipcClient } from '../ipc/ipc-client'
+import { IPC } from '../ipc/channels'
 import { registerProvider } from './provider'
 
 const IMAGE_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
@@ -21,6 +24,49 @@ class GeminiImageRequestError extends Error {
     this.name = 'GeminiImageRequestError'
     this.code = options.code
     this.statusCode = options.statusCode
+  }
+}
+
+async function persistGeneratedImage(data: string, mediaType?: string): Promise<ImageBlock> {
+  const fallback: ImageBlock = {
+    type: 'image',
+    source: {
+      type: 'base64',
+      mediaType: mediaType || 'image/png',
+      data
+    }
+  }
+
+  try {
+    const result = (await ipcClient.invoke(IPC.IMAGE_PERSIST_GENERATED, {
+      data,
+      mediaType
+    })) as {
+      filePath?: string
+      mediaType?: string
+      data?: string
+      error?: string
+    }
+
+    if (result?.error || !result?.data) {
+      if (result?.error) {
+        console.warn('[Gemini Provider] Failed to persist generated image:', result.error)
+      }
+      return fallback
+    }
+
+    return {
+      type: 'image',
+      source: {
+        type: 'base64',
+        mediaType: result.mediaType || mediaType || 'image/png',
+        data: result.data,
+        filePath: result.filePath
+      }
+    }
+  } catch (error) {
+    console.warn('[Gemini Provider] Failed to persist generated image:', error)
+    return fallback
   }
 }
 
@@ -350,16 +396,10 @@ class GeminiProvider implements APIProvider {
       }
 
       for (const image of images) {
+        const imageBlock = await persistGeneratedImage(image.data, image.mediaType)
         yield {
           type: 'image_generated',
-          imageBlock: {
-            type: 'image',
-            source: {
-              type: 'base64',
-              mediaType: image.mediaType,
-              data: image.data
-            }
-          }
+          imageBlock
         }
       }
 

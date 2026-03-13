@@ -13,6 +13,7 @@ import {
 import { join, extname } from 'path'
 import { mkdirSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
+import { randomUUID } from 'crypto'
 
 // Delay import of @electron-toolkit/utils to avoid accessing app before ready
 let electronApp: any
@@ -90,6 +91,69 @@ const mcpManager = new McpManager()
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuiting = false
+
+const GENERATED_IMAGES_DIR = 'generated-images'
+
+function getGeneratedImagesDir(): string {
+  const dir = join(app.getPath('userData'), GENERATED_IMAGES_DIR)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function guessMimeTypeFromExtension(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.webp':
+      return 'image/webp'
+    case '.gif':
+      return 'image/gif'
+    case '.bmp':
+      return 'image/bmp'
+    case '.svg':
+      return 'image/svg+xml'
+    default:
+      return 'image/png'
+  }
+}
+
+function guessExtensionFromMimeType(mediaType?: string): string {
+  switch ((mediaType || '').toLowerCase()) {
+    case 'image/jpeg':
+      return '.jpg'
+    case 'image/webp':
+      return '.webp'
+    case 'image/gif':
+      return '.gif'
+    case 'image/bmp':
+      return '.bmp'
+    case 'image/svg+xml':
+      return '.svg'
+    default:
+      return '.png'
+  }
+}
+
+function persistGeneratedImageFile(args: {
+  buffer: Buffer
+  mediaType?: string
+  sourceUrl?: string
+}): { filePath: string; mediaType: string; data: string } {
+  const urlExt = args.sourceUrl ? extname(args.sourceUrl.split('?')[0]) : ''
+  const mediaType =
+    args.mediaType && args.mediaType !== 'url'
+      ? args.mediaType
+      : guessMimeTypeFromExtension(urlExt || '.png')
+  const fileExt = urlExt || guessExtensionFromMimeType(mediaType)
+  const filePath = join(getGeneratedImagesDir(), `${Date.now()}-${randomUUID()}${fileExt}`)
+  writeFileSync(filePath, args.buffer)
+  return {
+    filePath,
+    mediaType,
+    data: args.buffer.toString('base64')
+  }
+}
 
 function recordCrash(event: string, details: unknown): void {
   writeCrashLog(event, details)
@@ -412,6 +476,33 @@ if (gotSingleInstanceLock) {
         return { error: String(err) }
       }
     })
+
+    ipcMain.handle(
+      'image:persist-generated',
+      async (
+        _event,
+        args: { data?: string; mediaType?: string; url?: string }
+      ): Promise<{ filePath?: string; mediaType?: string; data?: string; error?: string }> => {
+        try {
+          let buffer: Buffer
+          if (typeof args.data === 'string' && args.data.trim()) {
+            buffer = Buffer.from(args.data, 'base64')
+          } else if (typeof args.url === 'string' && args.url.trim()) {
+            buffer = await FeishuApi.downloadUrl(args.url)
+          } else {
+            return { error: 'Missing image data or url' }
+          }
+
+          return persistGeneratedImageFile({
+            buffer,
+            mediaType: args.mediaType,
+            sourceUrl: args.url
+          })
+        } catch (err) {
+          return { error: String(err) }
+        }
+      }
+    )
 
     ipcMain.handle('image:fetch-base64', async (_event, args: { url: string }) => {
       try {
