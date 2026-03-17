@@ -3,6 +3,21 @@
 All notable changes to **OpenCowork** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com).
 
+## [0.5.9] - 2026-03-17
+
+### Added
+- Pinned column for projects and sessions in database schema for improved project management.
+- Message deletion functionality in chat components.
+- JSON import for MCP server configurations — import multiple server settings at once in McpPanel.
+- Zoom functionality for Mermaid diagrams in AssistantMessage and markdown-viewer.
+
+### Changed
+- Refactored file search logic in fs-handlers to use recursive directory walking for better performance and accuracy.
+- Enhanced gitignore-utils parsing and handling of ignore patterns (trailing spaces, escaped characters).
+- New utility functions for managing select file tags in InputArea, improving text selection behavior.
+- Project data handling updated to include pinned status in queries and updates.
+- Added `@toon-format/toon` dependency.
+
 ## [0.5.8] - 2026-03-16
 
 ### Added
