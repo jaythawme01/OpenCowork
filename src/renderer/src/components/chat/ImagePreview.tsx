@@ -23,6 +23,28 @@ function getDownloadExtension(imageSrc: string): string {
   return fileExt ? `.${fileExt}` : '.png'
 }
 
+function dataUrlToBlob(dataUrl: string): Blob {
+  const commaIndex = dataUrl.indexOf(',')
+  if (commaIndex === -1) throw new Error('Invalid data URL')
+
+  const metadata = dataUrl.slice(5, commaIndex)
+  const data = dataUrl.slice(commaIndex + 1)
+  const mimeType = metadata.split(';')[0] || 'application/octet-stream'
+
+  if (metadata.includes(';base64')) {
+    const binary = window.atob(data)
+    const bytes = new Uint8Array(binary.length)
+
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+
+    return new Blob([bytes], { type: mimeType })
+  }
+
+  return new Blob([decodeURIComponent(data)], { type: mimeType })
+}
+
 export function ImagePreview({
   src,
   alt = 'Generated image'
@@ -68,8 +90,7 @@ export function ImagePreview({
       const defaultName = `image-${Date.now()}${getDownloadExtension(effectiveSrc)}`
 
       if (effectiveSrc.startsWith('data:')) {
-        const response = await fetch(effectiveSrc)
-        const blob = await response.blob()
+        const blob = dataUrlToBlob(effectiveSrc)
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
@@ -77,7 +98,7 @@ export function ImagePreview({
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
-        URL.revokeObjectURL(url)
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
       } else {
         const result = await window.api.downloadImage({ url: effectiveSrc, defaultName })
         if (result.error) throw new Error(result.error)
