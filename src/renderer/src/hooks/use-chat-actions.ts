@@ -1392,6 +1392,10 @@ export function useChatActions(): {
         }
 
         const sessionScope: SessionMemoryScope = session?.pluginId ? 'shared' : 'main'
+        const memorySnapshot = await loadLayeredMemorySnapshot(ipcClient, {
+          workingFolder: session?.workingFolder,
+          scope: sessionScope
+        })
         const cachedPromptSnapshot = session?.promptSnapshot
         const canReusePromptSnapshot =
           !!cachedPromptSnapshot &&
@@ -1404,10 +1408,6 @@ export function useChatActions(): {
         if (canReusePromptSnapshot && cachedPromptSnapshot) {
           effectiveToolDefs = cachedPromptSnapshot.toolDefs.slice()
         } else {
-          const memorySnapshot = await loadLayeredMemorySnapshot(ipcClient, {
-            workingFolder: session?.workingFolder,
-            scope: sessionScope
-          })
           const sshConnection = session?.sshConnectionId
             ? useSshStore
                 .getState()
@@ -1575,7 +1575,7 @@ export function useChatActions(): {
 
           if (shouldInjectContext && messagesToSend.length > 0) {
             const { buildDynamicContext } = await import('@renderer/lib/agent/dynamic-context')
-            const dynamicContext = buildDynamicContext({ sessionId })
+            const dynamicContext = buildDynamicContext({ sessionId, memorySnapshot, sessionScope })
 
             if (dynamicContext) {
               // Find the last user message and prepend dynamic context to its content

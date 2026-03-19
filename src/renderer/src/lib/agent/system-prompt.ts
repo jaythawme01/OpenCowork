@@ -182,8 +182,7 @@ export function buildSystemPrompt(options: {
     language,
     planMode,
     hasActiveTeam,
-    memorySnapshot,
-    sessionScope = 'main'
+    memorySnapshot
   } = options
 
   const toolDefs = options.toolDefs ?? toolRegistry.getDefinitions()
@@ -397,15 +396,6 @@ export function buildSystemPrompt(options: {
       `- Never delete files, install system packages, or expose secrets in output.`,
       `</running_commands>`
     )
-
-    // ── Calling External APIs ──
-    parts.push(
-      `\n<calling_external_apis>`,
-      `- Choose versions compatible with the user's dependency file.`,
-      `- If an API requires a key, inform the user. Never hardcode it.`,
-      `- Never send user data to external APIs without explicit consent.`,
-      `</calling_external_apis>`
-    )
   }
 
   // ── Working Folder Context ──
@@ -471,128 +461,7 @@ export function buildSystemPrompt(options: {
       `</workflows>`
     )
 
-    const agentsMemory = memorySnapshot?.agents?.content?.trim()
-    const globalSoul = memorySnapshot?.globalSoul?.content?.trim()
-    const projectSoul = memorySnapshot?.projectSoul?.content?.trim()
-    const globalUser = memorySnapshot?.globalUser?.content?.trim()
-    const projectUser = memorySnapshot?.projectUser?.content?.trim()
-    const globalMemory = memorySnapshot?.globalMemory?.content?.trim()
-    const projectMemory = memorySnapshot?.projectMemory?.content?.trim()
-    const globalMemoryPath = memorySnapshot?.globalMemory?.path?.trim()
     const globalHomePath = memorySnapshot?.globalHomePath?.trim()
-    const globalDailyMemory = memorySnapshot?.globalDailyMemory ?? []
-    const projectDailyMemory = memorySnapshot?.projectDailyMemory ?? []
-
-    if (sessionScope === 'main') {
-      parts.push(
-        `\n<memory_loading_policy>`,
-        `Session scope: MAIN. Load workspace protocol plus long-term persona, user profile, and curated memory layers.`,
-        `Project-level files override global defaults when both exist. System prompt rules still take priority over all memory files.`,
-        `</memory_loading_policy>`
-      )
-    } else {
-      parts.push(
-        `\n<memory_loading_policy>`,
-        `Session scope: SHARED. Do not rely on SOUL.md, USER.md, MEMORY.md, or daily memory files in shared contexts.`,
-        `Use only the system prompt, current shared-session context, and any explicitly provided runtime details.`,
-        `</memory_loading_policy>`
-      )
-    }
-
-    if (agentsMemory) {
-      parts.push(
-        `\n<project_memory>`,
-        `The following is AGENTS.md from the working directory. Treat it as authoritative workspace protocol and project context.`,
-        ``,
-        agentsMemory,
-        `</project_memory>`
-      )
-    }
-
-    if (sessionScope === 'main' && globalSoul) {
-      parts.push(
-        `\n<global_soul>`,
-        `The following is global SOUL.md from \`${memorySnapshot?.globalSoul?.path}\`, describing your default long-term identity and style.`,
-        ``,
-        globalSoul,
-        `</global_soul>`
-      )
-    }
-
-    if (sessionScope === 'main' && projectSoul) {
-      parts.push(
-        `\n<project_soul>`,
-        `The following is project SOUL.md from \`${memorySnapshot?.projectSoul?.path}\`. It refines the global soul for this workspace.`,
-        ``,
-        projectSoul,
-        `</project_soul>`
-      )
-    }
-
-    if (sessionScope === 'main' && globalUser) {
-      parts.push(
-        `\n<global_user>`,
-        `The following is global USER.md from \`${memorySnapshot?.globalUser?.path}\`, describing the human you are helping across projects.`,
-        ``,
-        globalUser,
-        `</global_user>`
-      )
-    }
-
-    if (sessionScope === 'main' && projectUser) {
-      parts.push(
-        `\n<project_user>`,
-        `The following is project USER.md from \`${memorySnapshot?.projectUser?.path}\`. It adds workspace-specific user preferences and goals.`,
-        ``,
-        projectUser,
-        `</project_user>`
-      )
-    }
-
-    if (sessionScope === 'main' && globalDailyMemory.length > 0) {
-      parts.push(
-        `\n<global_daily_memory>`,
-        `Recent global daily memory files provide short-term continuity.`,
-        ...globalDailyMemory.flatMap((entry) => [
-          `\n## ${entry.date} — \`${entry.path}\``,
-          entry.content ?? ''
-        ]),
-        `</global_daily_memory>`
-      )
-    }
-
-    if (sessionScope === 'main' && projectDailyMemory.length > 0) {
-      parts.push(
-        `\n<project_daily_memory>`,
-        `Recent project daily memory files provide short-term workspace continuity.`,
-        ...projectDailyMemory.flatMap((entry) => [
-          `\n## ${entry.date} — \`${entry.path}\``,
-          entry.content ?? ''
-        ]),
-        `</project_daily_memory>`
-      )
-    }
-
-    if (sessionScope === 'main' && globalMemory) {
-      parts.push(
-        `\n<global_memory>`,
-        `The following is global MEMORY.md from \`${globalMemoryPath}\`, containing curated cross-session memory.`,
-        ``,
-        globalMemory,
-        `</global_memory>`
-      )
-    }
-
-    if (sessionScope === 'main' && projectMemory) {
-      parts.push(
-        `\n<project_long_term_memory>`,
-        `The following is project MEMORY.md from \`${memorySnapshot?.projectMemory?.path}\`, containing workspace-specific long-term memory.`,
-        ``,
-        projectMemory,
-        `</project_long_term_memory>`
-      )
-    }
-
     const globalPathLabel = globalHomePath ? `\`${globalHomePath}\`` : 'path unavailable'
 
     parts.push(
@@ -614,7 +483,7 @@ export function buildSystemPrompt(options: {
       )
     }
 
-      const sessionStateReminder = buildSessionStateReminder(sessionId)
+    const sessionStateReminder = buildSessionStateReminder(sessionId)
     if (sessionStateReminder) {
       parts.push(`\n${sessionStateReminder}`)
     }
