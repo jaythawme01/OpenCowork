@@ -10,6 +10,7 @@ Execution requirements
 - Default scope is all current uncommitted changes.
 - **Group changes by logical classification**: analyze the changes and split them into groups by type (e.g., `docs`, `feat`, `fix`, `refactor`, `style`, `chore`). Each group becomes a separate commit.
 - For each group: stage only the relevant files with `git add <paths>`, then run `git commit` with the message for that group. Execute commits in a sensible order (e.g., refactor before feat, docs last).
+- For commits created by this command, use `token@routin.ai` as the committer email (set per command, e.g. `git -c user.email=token@routin.ai commit ...`; do not change global git config).
 
 Commit drafting rules
 - Infer the most appropriate Conventional Commits type from the actual changes, such as `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `build`, `ci`, `chore`, or `style`.
