@@ -3,6 +3,27 @@
 All notable changes to **OpenCowork** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com).
 
+## [0.6.1] - 2026-03-20
+
+### Added
+- Resource management page for agents and commands, with support for creating user commands directly in the app.
+- File-aware composer flow in chat, including selected-file editing support and automatic model routing based on input context.
+- GIF sprite sheet workflow in Draw, with new encoding and IPC handling for generated animations.
+- Manual retry support for rate-limited image generation.
+- Plan execution from Cowork into a new session.
+
+### Changed
+- Moved layered memory reminders into dynamic context generation for cleaner agent prompt assembly.
+- Prompt recommendations now default to the fast model path.
+- Added mode-specific switch highlights to improve navigation clarity between app modes.
+- Refreshed application icons and synced the Bun lockfile.
+- Removed deprecated Xiaomi preview models.
+
+### Fixed
+- Preserved chat titles more reliably and improved message list navigation behavior.
+- Normalized SSH session status updates.
+- Constrained MCP settings panel layout to avoid overflow issues.
+
 ## [0.6.0] - 2026-03-18
 
 ### Added
