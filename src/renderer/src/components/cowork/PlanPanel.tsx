@@ -4,13 +4,24 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Separator } from '@renderer/components/ui/separator'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { usePlanStore, type Plan, type PlanStatus } from '@renderer/stores/plan-store'
 import { useUIStore } from '@renderer/stores/ui-store'
 import { useChatStore } from '@renderer/stores/chat-store'
 import { useAgentStore } from '@renderer/stores/agent-store'
-import { sendImplementPlan, sendPlanRevision } from '@renderer/hooks/use-chat-actions'
+import {
+  sendImplementPlan,
+  sendImplementPlanInNewSession,
+  sendPlanRevision
+} from '@renderer/hooks/use-chat-actions'
 import { cn } from '@renderer/lib/utils'
 
 function StatusBadge({ status }: { status: PlanStatus }): React.JSX.Element {
@@ -19,14 +30,14 @@ function StatusBadge({ status }: { status: PlanStatus }): React.JSX.Element {
     approved: 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20',
     implementing: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
     completed: 'bg-muted text-muted-foreground border-border',
-    rejected: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20',
+    rejected: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
   }
   const labelMap: Record<PlanStatus, string> = {
     drafting: 'Drafting',
     approved: 'Approved',
     implementing: 'Implementing',
     completed: 'Completed',
-    rejected: 'Rejected',
+    rejected: 'Rejected'
   }
   return (
     <Badge variant="outline" className={cn('text-[10px] font-medium', colorMap[status])}>
@@ -40,15 +51,22 @@ function PlanContent({ plan }: { plan: Plan }): React.JSX.Element {
   const planMode = useUIStore((s) => s.planMode)
   const enterPlanMode = useUIStore((s) => s.enterPlanMode)
   const activeSessionId = useChatStore((s) => s.activeSessionId)
-  const isRunning = useAgentStore((s) => activeSessionId ? s.runningSessions[activeSessionId] === 'running' : false)
+  const isRunning = useAgentStore((s) =>
+    activeSessionId ? s.runningSessions[activeSessionId] === 'running' : false
+  )
   const [rejectOpen, setRejectOpen] = useState(false)
   const [rejectFeedback, setRejectFeedback] = useState('')
 
-  const canApprove = !!plan.content && (plan.status === 'drafting' || plan.status === 'rejected') && !isRunning
+  const canApprove =
+    !!plan.content && (plan.status === 'drafting' || plan.status === 'rejected') && !isRunning
   const canReject = canApprove
 
   const handleConfirmExecute = (): void => {
     sendImplementPlan(plan.id)
+  }
+
+  const handleExecuteInNewSession = (): void => {
+    sendImplementPlanInNewSession(plan.id)
   }
 
   const handleEditPlan = (): void => {
@@ -113,6 +131,14 @@ function PlanContent({ plan }: { plan: Plan }): React.JSX.Element {
               <CheckCircle className="size-3" />
               {t('plan.confirmExecute', { defaultValue: 'Confirm Execute' })}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5"
+              onClick={handleExecuteInNewSession}
+            >
+              {t('plan.executeInNewSession', { defaultValue: 'New Session Execute' })}
+            </Button>
             {canReject && (
               <Button
                 variant="outline"
@@ -125,17 +151,14 @@ function PlanContent({ plan }: { plan: Plan }): React.JSX.Element {
             )}
           </>
         )}
-        {(plan.status === 'approved' || plan.status === 'implementing') && !planMode && !isRunning && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5"
-            onClick={handleEditPlan}
-          >
-            <PenLine className="size-3" />
-            {t('plan.edit', { defaultValue: 'Edit Plan' })}
-          </Button>
-        )}
+        {(plan.status === 'approved' || plan.status === 'implementing') &&
+          !planMode &&
+          !isRunning && (
+            <Button variant="outline" size="sm" className="h-7 gap-1.5" onClick={handleEditPlan}>
+              <PenLine className="size-3" />
+              {t('plan.edit', { defaultValue: 'Edit Plan' })}
+            </Button>
+          )}
       </div>
 
       {/* Drafting indicator */}
@@ -157,7 +180,9 @@ function PlanContent({ plan }: { plan: Plan }): React.JSX.Element {
           <Textarea
             value={rejectFeedback}
             onChange={(event) => setRejectFeedback(event.target.value)}
-            placeholder={t('plan.rejectPlaceholder', { defaultValue: 'Add feedback for a revised plan...' })}
+            placeholder={t('plan.rejectPlaceholder', {
+              defaultValue: 'Add feedback for a revised plan...'
+            })}
             className="min-h-[100px]"
           />
           <DialogFooter>
@@ -187,7 +212,9 @@ export function PlanPanel(): React.JSX.Element {
   })
   const planMode = useUIStore((s) => s.planMode)
   const enterPlanMode = useUIStore((s) => s.enterPlanMode)
-  const isRunning = useAgentStore((s) => activeSessionId ? s.runningSessions[activeSessionId] === 'running' : false)
+  const isRunning = useAgentStore((s) =>
+    activeSessionId ? s.runningSessions[activeSessionId] === 'running' : false
+  )
 
   if (!plan) {
     return (
@@ -197,7 +224,9 @@ export function PlanPanel(): React.JSX.Element {
           {t('plan.noPlan', { defaultValue: 'No plan for this session' })}
         </p>
         <p className="mt-1 text-xs text-muted-foreground/60">
-          {t('plan.noPlanDesc', { defaultValue: 'Enter Plan Mode to create an implementation plan before coding.' })}
+          {t('plan.noPlanDesc', {
+            defaultValue: 'Enter Plan Mode to create an implementation plan before coding.'
+          })}
         </p>
         {!planMode && !isRunning && (
           <Button

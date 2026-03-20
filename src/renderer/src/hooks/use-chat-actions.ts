@@ -2331,6 +2331,45 @@ export function sendImplementPlan(planId: string): void {
   _sendMessageFn(`Execute the plan`)
 }
 
+export function sendImplementPlanInNewSession(planId: string): void {
+  if (!_sendMessageFn) return
+
+  const plan = usePlanStore.getState().plans[planId]
+  if (!plan?.content?.trim()) return
+
+  const chatStore = useChatStore.getState()
+  const uiStore = useUIStore.getState()
+  const providerStore = useProviderStore.getState()
+  const sourceSession = chatStore.sessions.find((item) => item.id === plan.sessionId)
+  if (!sourceSession) return
+
+  usePlanStore.getState().approvePlan(planId)
+  uiStore.exitPlanMode(plan.sessionId)
+
+  const newSessionId = chatStore.createSession('code', sourceSession.projectId)
+  chatStore.updateSessionTitle(newSessionId, plan.title)
+
+  if (sourceSession.workingFolder) {
+    chatStore.setWorkingFolder(newSessionId, sourceSession.workingFolder)
+  }
+  chatStore.setSshConnectionId(newSessionId, sourceSession.sshConnectionId ?? null)
+
+  if (sourceSession.providerId && sourceSession.modelId) {
+    chatStore.updateSessionModel(newSessionId, sourceSession.providerId, sourceSession.modelId)
+    if (providerStore.activeProviderId !== sourceSession.providerId) {
+      providerStore.setActiveProvider(sourceSession.providerId)
+    }
+    if (providerStore.activeModelId !== sourceSession.modelId) {
+      providerStore.setActiveModel(sourceSession.modelId)
+    }
+  }
+
+  uiStore.setRightPanelTab('steps')
+  uiStore.setRightPanelOpen(true)
+
+  void _sendMessageFn(plan.content, undefined, undefined, newSessionId)
+}
+
 /**
  * Trigger plan revision by sending feedback to the agent.
  * Called from PlanPanel when the user rejects a plan.

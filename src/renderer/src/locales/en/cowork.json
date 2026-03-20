@@ -114,6 +114,7 @@
     "noContent": "No plan content saved yet.",
     "implement": "Implement",
     "confirmExecute": "Confirm Execute",
+    "executeInNewSession": "New Session Execute",
     "approve": "Approve",
     "reject": "Reject",
     "rejectTitle": "Reject Plan",
