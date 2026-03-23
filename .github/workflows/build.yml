@@ -2,7 +2,6 @@ name: Build & Release
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  MAC_AUTO_UPDATE_ENABLED: ${{ secrets.CSC_LINK != '' && 'true' || 'false' }}
 
 on:
   # 在 GitHub 上发布 Release 时自动触发构建
@@ -37,7 +36,6 @@ jobs:
       checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
       is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
       release_id: ${{ steps.meta.outputs.release_id }}
-      mac_auto_update_enabled: ${{ steps.meta.outputs.mac_auto_update_enabled }}
     steps:
       - name: Checkout (gh cli needs repo context)
         uses: actions/checkout@v6
@@ -51,15 +49,8 @@ jobs:
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
           RELEASE_ID: ${{ github.event.release.id }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "$CSC_LINK" ]; then
-            echo "mac_auto_update_enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "mac_auto_update_enabled=false" >> "$GITHUB_OUTPUT"
-          fi
-
           if [ "$EVENT_NAME" = "release" ]; then
             # 从 Release 事件中获取版本号 (去掉 v 前缀)
             VERSION="${RELEASE_TAG#v}"
@@ -392,39 +383,75 @@ jobs:
           name: open-cowork-build-output
           path: out
 
-      # CSC_LINK must be a .p12/.pfx file path, https URL, or base64 certificate data.
-      # If it is '.' or any directory (e.g. repo root), electron-builder fails with: "<path> not a file".
-      - name: Validate macOS code signing (CSC_LINK)
+      - name: Resolve macOS code signing
+        id: mac_signing
         shell: bash
         env:
           CSC_LINK: ${{ secrets.CSC_LINK || '' }}
         run: |
           if [ -z "$CSC_LINK" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "auto_update_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::macOS code signing disabled: CSC_LINK is not configured"
             exit 0
           fi
+
           if [ "$CSC_LINK" = '.' ] || [ "$CSC_LINK" = './' ]; then
-            echo "::error::CSC_LINK cannot be '.' or './'. electron-builder expects a certificate file, URL, or base64 — not the repo root. Fix the repository secret or remove it for unsigned (ad-hoc) builds."
-            exit 1
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "auto_update_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::macOS code signing disabled: CSC_LINK points to the repository root"
+            exit 0
           fi
+
           if [ -d "$CSC_LINK" ]; then
-            echo "::error::CSC_LINK points to a directory, not a certificate file. Do not set it to the workspace path. Use base64-encoded .p12, an https link to .p12, or a runner-local path after writing the file in a prior step."
-            exit 1
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "auto_update_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::macOS code signing disabled: CSC_LINK points to a directory"
+            exit 0
           fi
+
+          if printf '%s' "$CSC_LINK" | grep -Eq '^https?://'; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "auto_update_enabled=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::macOS code signing enabled via certificate URL"
+            exit 0
+          fi
+
+          if [ -f "$CSC_LINK" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "auto_update_enabled=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::macOS code signing enabled via local certificate file"
+            exit 0
+          fi
+
+          normalized_csc_link=$(printf '%s' "$CSC_LINK" | tr -d '\n\r')
+          if [ ${#normalized_csc_link} -ge 512 ] && printf '%s' "$normalized_csc_link" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "auto_update_enabled=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::macOS code signing enabled via base64 certificate data"
+            exit 0
+          fi
+
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "auto_update_enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::macOS code signing disabled: CSC_LINK is neither a certificate file, URL, nor base64 certificate data"
 
       - name: Package ${{ matrix.platform }}-${{ matrix.artifact_arch }}
         run: npx electron-builder --mac dmg zip --${{ matrix.build_arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_BUILDER_BINARIES_MIRROR: https://cdn.npmmirror.com/binaries/electron-builder-binaries/
-          CSC_LINK: ${{ secrets.CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD || '' }}
-          APPLE_ID: ${{ secrets.APPLE_ID || '' }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' && 'true' || 'false' }}
+          CSC_LINK: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ steps.mac_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.mac_signing.outputs.enabled }}
 
       - name: Prepare macOS artifacts
         shell: bash
+        env:
+          MAC_AUTO_UPDATE_ENABLED: ${{ steps.mac_signing.outputs.auto_update_enabled }}
         run: |
           mkdir -p release-assets
           dmg_file=$(find dist -maxdepth 1 -type f -name '*.dmg' | head -n 1)
@@ -461,7 +488,7 @@ jobs:
           echo "✅ Prepared $(basename "$yml_file") -> latest-mac-${{ matrix.artifact_arch }}.yml"
 
       - name: Patch macOS update metadata
-        if: needs.prepare.outputs.mac_auto_update_enabled == 'true'
+        if: steps.mac_signing.outputs.auto_update_enabled == 'true'
         shell: bash
         run: |
           yml="release-assets/latest-mac-${{ matrix.artifact_arch }}.yml"
@@ -508,7 +535,6 @@ jobs:
           done
 
   publish-macos-update-metadata:
-    if: needs.prepare.outputs.mac_auto_update_enabled == 'true'
     needs: [prepare, build-macos]
     runs-on: ubuntu-latest
 
@@ -528,7 +554,20 @@ jobs:
           name: open-cowork-mac-amd64
           path: mac-amd64
 
+      - name: Check macOS update metadata
+        id: mac_update_metadata
+        shell: bash
+        run: |
+          if [ ! -f "mac-arm64/latest-mac-arm64.yml" ] || [ ! -f "mac-amd64/latest-mac-amd64.yml" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ Skip merged macOS update metadata because signed updater files were not produced"
+            exit 0
+          fi
+
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
       - name: Merge macOS update metadata
+        if: steps.mac_update_metadata.outputs.available == 'true'
         shell: bash
         run: |
           ruby <<'RUBY'
@@ -561,6 +600,7 @@ jobs:
           RUBY
 
       - name: Upload merged macOS update metadata to Release
+        if: steps.mac_update_metadata.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
