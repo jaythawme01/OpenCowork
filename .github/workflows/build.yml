@@ -37,6 +37,7 @@ jobs:
       checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
       is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
       release_id: ${{ steps.meta.outputs.release_id }}
+      mac_auto_update_enabled: ${{ steps.meta.outputs.mac_auto_update_enabled }}
     steps:
       - name: Checkout (gh cli needs repo context)
         uses: actions/checkout@v6
@@ -50,8 +51,15 @@ jobs:
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
           RELEASE_ID: ${{ github.event.release.id }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ -n "$CSC_LINK" ]; then
+            echo "mac_auto_update_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mac_auto_update_enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
           if [ "$EVENT_NAME" = "release" ]; then
             # 从 Release 事件中获取版本号 (去掉 v 前缀)
             VERSION="${RELEASE_TAG#v}"
@@ -434,7 +442,7 @@ jobs:
           echo "✅ Prepared $(basename "$yml_file") -> latest-mac-${{ matrix.artifact_arch }}.yml"
 
       - name: Patch macOS update metadata
-        if: env.MAC_AUTO_UPDATE_ENABLED == 'true'
+        if: needs.prepare.outputs.mac_auto_update_enabled == 'true'
         shell: bash
         run: |
           yml="release-assets/latest-mac-${{ matrix.artifact_arch }}.yml"
@@ -481,7 +489,7 @@ jobs:
           done
 
   publish-macos-update-metadata:
-    if: env.MAC_AUTO_UPDATE_ENABLED == 'true'
+    if: needs.prepare.outputs.mac_auto_update_enabled == 'true'
     needs: [prepare, build-macos]
     runs-on: ubuntu-latest
 
