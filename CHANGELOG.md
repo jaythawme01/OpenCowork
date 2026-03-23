@@ -3,6 +3,19 @@
 All notable changes to **OpenCowork** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com).
 
+## [0.6.2] - 2026-03-20
+
+### Added
+
+- New RightPanelRail component for enhanced layout sidebar navigation
+
+### Changed
+
+- Improved chat UI components: FileChangeCard, InputArea, LazySyntaxHighlighter, MessageList, and ToolCallCard for better functionality and visual appearance
+- Updated layout components: TitleBar and TopBar with refined UI interactions
+- Refreshed UI dialog components: alert-dialog and dialog for consistent styling
+- Added missing localization strings for layout-related UI in English (`en/layout.json`) and Chinese (`zh/layout.json`) locales
+
 ## [0.6.1] - 2026-03-20
 
 ### Added
