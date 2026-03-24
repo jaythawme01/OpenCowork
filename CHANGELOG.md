@@ -3,6 +3,32 @@
 All notable changes to **OpenCowork** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com).
 
+## [0.6.5] - 2026-03-24
+
+### Added
+
+- Added project workspace navigation with dedicated project home/archive pages, a workspace sidebar, and project-bound channel settings.
+- Added a built-in `/plan` command for entering Plan Mode directly from chat.
+- Added personal Weixin media support for sending images/files and downloading inbound image messages for multimodal processing.
+- Added an open source agent SDK survey covering Python, TypeScript, C#, and Java options.
+
+### Changed
+
+- Improved the chat composer and message actions with file-aware drafting, queued draft editing, and attachment-aware layout behavior.
+- Expanded the onboarding tour with dedicated Clarify, Cowork, and Code mode guidance plus updated English and Chinese copy.
+- Updated the docs Docker build and CI workflow to use safer memory settings and Node.js 22.
+
+### Fixed
+
+- Flushed completed tool events before ending aborted agent runs so terminal tool states stay consistent.
+- Fixed the home composer sizing when attachments are present.
+- Hardened the macOS unsigned build and release signing flow with stronger validation, ad-hoc signing support, and library validation adjustments.
+
+### Refactored
+
+- Simplified the channel settings panel layout by removing redundant project-name prop threading.
+- Removed redundant hover tooltip content from the right panel rail tabs.
+
 ## [0.6.4] - 2026-03-24
 
 ### Refactored
