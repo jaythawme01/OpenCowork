@@ -180,7 +180,8 @@ function ContextRing(): React.JSX.Element | null {
 
 function ActiveMcpsBadge({ projectId }: { projectId?: string | null }): React.JSX.Element | null {
   const { t } = useTranslation('chat')
-  const activeMcpIds = useMcpStore((s) => s.getActiveMcpIds(projectId))
+  const activeMcpIdsByProject = useMcpStore((s) => s.activeMcpIdsByProject)
+  const activeMcpIds = activeMcpIdsByProject[projectId ?? '__global__'] ?? []
   const servers = useMcpStore((s) => s.servers)
   const serverTools = useMcpStore((s) => s.serverTools)
   if (activeMcpIds.length === 0) return null

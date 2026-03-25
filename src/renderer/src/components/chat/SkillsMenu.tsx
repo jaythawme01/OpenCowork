@@ -54,7 +54,8 @@ export function SkillsMenu({
 
   // Channel state
   const channels = useChannelStore((s) => s.channels)
-  const activeChannelIds = useChannelStore((s) => s.getActiveChannelIds(projectId))
+  const activeChannelIdsByProject = useChannelStore((s) => s.activeChannelIdsByProject)
+  const activeChannelIds = activeChannelIdsByProject[projectId ?? '__global__'] ?? []
   const toggleActiveChannel = useChannelStore((s) => s.toggleActiveChannel)
   const loadChannels = useChannelStore((s) => s.loadChannels)
   const loadProviders = useChannelStore((s) => s.loadProviders)
@@ -69,7 +70,8 @@ export function SkillsMenu({
 
   // MCP state
   const mcpServers = useMcpStore((s) => s.servers)
-  const activeMcpIds = useMcpStore((s) => s.getActiveMcpIds(projectId))
+  const activeMcpIdsByProject = useMcpStore((s) => s.activeMcpIdsByProject)
+  const activeMcpIds = activeMcpIdsByProject[projectId ?? '__global__'] ?? []
   const toggleActiveMcp = useMcpStore((s) => s.toggleActiveMcp)
   const loadMcpServers = useMcpStore((s) => s.loadServers)
   const mcpStatuses = useMcpStore((s) => s.serverStatuses)

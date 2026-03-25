@@ -80,7 +80,8 @@ export function ChatHomePage(): React.JSX.Element {
   const providers = useProviderStore((s) => s.providers)
   const mainModelSelectionMode = useSettingsStore((s) => s.mainModelSelectionMode)
   const conversationGuideSeen = useSettingsStore((s) => s.conversationGuideSeen)
-  const autoSelection = useUIStore((s) => s.getAutoModelSelection(activeSessionId))
+  const autoModelSelectionsBySession = useUIStore((s) => s.autoModelSelectionsBySession)
+  const autoSelection = activeSessionId ? (autoModelSelectionsBySession[activeSessionId] ?? null) : null
   const handleSend = (text: string, images?: ImageAttachment[]): void => {
     const chatStore = useChatStore.getState()
     const sessionId = chatStore.createSession(mode, activeProject?.id ?? undefined)

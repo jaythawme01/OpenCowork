@@ -351,8 +351,12 @@ export function ModelSwitcher(): React.JSX.Element {
   const activeSessionId = useChatStore((s) => s.activeSessionId)
   const sessions = useChatStore((s) => s.sessions)
   const mainModelSelectionMode = useSettingsStore((s) => s.mainModelSelectionMode)
-  const autoSelection = useUIStore((s) => s.getAutoModelSelection(activeSessionId))
-  const autoRoutingState = useUIStore((s) => s.getAutoModelRoutingState(activeSessionId))
+  const autoModelSelectionsBySession = useUIStore((s) => s.autoModelSelectionsBySession)
+  const autoModelRoutingStatesBySession = useUIStore((s) => s.autoModelRoutingStatesBySession)
+  const autoSelection = activeSessionId ? (autoModelSelectionsBySession[activeSessionId] ?? null) : null
+  const autoRoutingState = activeSessionId
+    ? (autoModelRoutingStatesBySession[activeSessionId] ?? 'idle')
+    : 'idle'
 
   const enabledProviders = providers.filter((p) => p.enabled)
   const activeSession = sessions.find((item) => item.id === activeSessionId)
