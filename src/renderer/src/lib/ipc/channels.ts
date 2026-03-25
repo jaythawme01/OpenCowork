@@ -58,6 +58,14 @@ export const IPC = {
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
 
+  // Usage Analytics
+  USAGE_EVENTS_ADD: 'usage-events:add',
+  USAGE_EVENTS_OVERVIEW: 'usage-events:overview',
+  USAGE_EVENTS_DAILY: 'usage-events:daily',
+  USAGE_EVENTS_BY_MODEL: 'usage-events:by-model',
+  USAGE_EVENTS_BY_PROVIDER: 'usage-events:by-provider',
+  USAGE_EVENTS_LIST: 'usage-events:list',
+
   // Plugins
   PLUGIN_LIST_PROVIDERS: 'plugin:list-providers',
   PLUGIN_LIST: 'plugin:list',
@@ -144,6 +152,30 @@ export const IPC = {
 
   // App Updates
   UPDATE_AVAILABLE: 'update:available',
+
+  // Wiki
+  DB_WIKI_LIST_DOCUMENTS: 'db:wiki:list-documents',
+  DB_WIKI_GET_DOCUMENT: 'db:wiki:get-document',
+  DB_WIKI_GET_DOCUMENT_BY_NAME: 'db:wiki:get-document-by-name',
+  DB_WIKI_SAVE_DOCUMENT: 'db:wiki:save-document',
+  DB_WIKI_LIST_SECTIONS: 'db:wiki:list-sections',
+  DB_WIKI_SAVE_SECTIONS: 'db:wiki:save-sections',
+  DB_WIKI_LIST_SECTION_SOURCES: 'db:wiki:list-section-sources',
+  DB_WIKI_SAVE_SECTION_SOURCES: 'db:wiki:save-section-sources',
+  DB_WIKI_GET_PROJECT_STATE: 'db:wiki:get-project-state',
+  DB_WIKI_SAVE_PROJECT_STATE: 'db:wiki:save-project-state',
+  DB_WIKI_CLEAR_PROJECT: 'db:wiki:clear-project',
+  DB_WIKI_GET_DOCUMENT_DETAIL: 'db:wiki:get-document-detail',
+  DB_WIKI_LIST_RUNS: 'db:wiki:list-runs',
+  DB_WIKI_CREATE_RUN: 'db:wiki:create-run',
+  DB_WIKI_UPDATE_RUN: 'db:wiki:update-run',
+  GIT_GET_HEAD: 'git:get-head',
+  GIT_GET_RANGE_COMMITS: 'git:get-range-commits',
+  GIT_GET_CHANGED_FILES: 'git:get-changed-files',
+  GIT_GET_STATUS: 'git:get-status',
+  WIKI_GENERATE_FULL: 'wiki:generate-full',
+  WIKI_REGENERATE: 'wiki:regenerate',
+  WIKI_GENERATE_INCREMENTAL: 'wiki:generate-incremental',
   UPDATE_CHECK: 'update:check',
   UPDATE_DOWNLOAD: 'update:download',
   UPDATE_DOWNLOAD_PROGRESS: 'update:download-progress',

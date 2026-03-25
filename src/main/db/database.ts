@@ -577,6 +577,136 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_projects_plugin_id ON projects(plugin_id);
   `)
 
+  // --- Wiki tables ---
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS wiki_documents (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      content_markdown TEXT NOT NULL DEFAULT '',
+      generation_mode TEXT NOT NULL DEFAULT 'full',
+      last_generated_commit_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(project_id, name),
+      UNIQUE(project_id, slug),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wiki_sections (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      anchor TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      summary TEXT NOT NULL DEFAULT '',
+      content_markdown TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (document_id) REFERENCES wiki_documents(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wiki_section_sources (
+      id TEXT PRIMARY KEY,
+      section_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      symbol_hint TEXT,
+      reason TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (section_id) REFERENCES wiki_sections(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wiki_project_state (
+      project_id TEXT PRIMARY KEY,
+      wiki_enabled INTEGER NOT NULL DEFAULT 0,
+      wiki_search_enabled INTEGER NOT NULL DEFAULT 0,
+      last_full_generated_commit_id TEXT,
+      last_incremental_generated_commit_id TEXT,
+      last_exported_at INTEGER,
+      last_generation_status TEXT NOT NULL DEFAULT 'idle',
+      last_generation_error TEXT,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wiki_generation_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      base_commit_id TEXT,
+      head_commit_id TEXT,
+      changed_files_json TEXT NOT NULL DEFAULT '[]',
+      affected_documents_json TEXT NOT NULL DEFAULT '[]',
+      output_summary TEXT,
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wiki_documents_project ON wiki_documents(project_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_wiki_sections_document ON wiki_sections(document_id, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_wiki_section_sources_section ON wiki_section_sources(section_id);
+    CREATE INDEX IF NOT EXISTS idx_wiki_generation_runs_project ON wiki_generation_runs(project_id, created_at DESC);
+  `)
+
+  // --- Usage Events table ---
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL,
+      request_started_at INTEGER,
+      request_finished_at INTEGER,
+      session_id TEXT,
+      message_id TEXT,
+      project_id TEXT,
+      source_kind TEXT NOT NULL,
+      provider_id TEXT,
+      provider_name TEXT,
+      provider_type TEXT,
+      provider_builtin_id TEXT,
+      provider_base_url TEXT,
+      model_id TEXT,
+      model_name TEXT,
+      model_category TEXT,
+      request_type TEXT,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      billable_input_tokens INTEGER,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER,
+      cache_read_tokens INTEGER,
+      reasoning_tokens INTEGER,
+      context_tokens INTEGER,
+      input_price REAL,
+      output_price REAL,
+      cache_creation_price REAL,
+      cache_hit_price REAL,
+      input_cost_usd REAL,
+      output_cost_usd REAL,
+      cache_creation_cost_usd REAL,
+      cache_hit_cost_usd REAL,
+      total_cost_usd REAL,
+      ttft_ms REAL,
+      total_ms REAL,
+      tps REAL,
+      provider_response_id TEXT,
+      request_debug_json TEXT,
+      usage_raw_json TEXT,
+      meta_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_events_created_at ON usage_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_provider_created_at ON usage_events(provider_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_model_created_at ON usage_events(model_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_session_created_at ON usage_events(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_source_kind ON usage_events(source_kind);
+  `)
+
   // Migration: add pinned column to projects if missing (before creating index on it)
   if (!hasColumn(db, 'projects', 'pinned')) {
     try {
