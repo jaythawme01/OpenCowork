@@ -331,7 +331,10 @@
     "copyOutput": "Copy output",
     "viewDetails": "View details",
     "tok": "tok",
-    "toolCalls": "Tool Calls"
+    "toolCalls": "Tool Calls",
+    "summaryEmpty": "No summary yet",
+    "openInRunsRunning": "View live progress in the right-side execution list",
+    "openInRunsDone": "View the full record in the right-side execution list"
   },
   "teamEvent": {
     "teamCreated": "Team Created",

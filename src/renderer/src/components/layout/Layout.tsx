@@ -31,6 +31,7 @@ import { TitleBar } from './TitleBar'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 import { RightPanel } from './RightPanel'
 import { PreviewPanel } from './PreviewPanel'
+import { SubAgentExecutionDetail } from './SubAgentExecutionDetail'
 import { RIGHT_PANEL_TAB_ORDER } from './right-panel-defs'
 import { MessageList } from '@renderer/components/chat/MessageList'
 import { InputArea } from '@renderer/components/chat/InputArea'
@@ -173,6 +174,9 @@ export function Layout({ updateInfo, onOpenUpdateDialog }: LayoutProps): React.J
   const previewPanelOpen = useUIStore((s) => s.previewPanelOpen)
   const previewPanelState = useUIStore((s) => s.previewPanelState)
   const closePreviewPanel = useUIStore((s) => s.closePreviewPanel)
+  const subAgentExecutionDetailOpen = useUIStore((s) => s.subAgentExecutionDetailOpen)
+  const subAgentExecutionDetailToolUseId = useUIStore((s) => s.subAgentExecutionDetailToolUseId)
+  const closeSubAgentExecutionDetail = useUIStore((s) => s.closeSubAgentExecutionDetail)
   const toolbarCollapsedByDefault = useSettingsStore((s) => s.toolbarCollapsedByDefault)
   const chatView = useUIStore((s) => s.chatView)
   const activeSessionView = useChatStore(
@@ -321,6 +325,7 @@ export function Layout({ updateInfo, onOpenUpdateDialog }: LayoutProps): React.J
     prevActiveSessionRef.current = activeSessionId
     if (prev !== null && prev !== activeSessionId) {
       useUIStore.getState().closeDetailPanel()
+      useUIStore.getState().closeSubAgentExecutionDetail()
     }
   }, [activeSessionId])
 
@@ -1140,7 +1145,11 @@ export function Layout({ updateInfo, onOpenUpdateDialog }: LayoutProps): React.J
                           <InputArea
                             onSend={sendMessage}
                             onStop={stopStreaming}
-                            onSelectFolder={mode !== 'chat' && !activeSessionView.activeProjectId ? handleOpenFolderDialog : undefined}
+                            onSelectFolder={
+                              mode !== 'chat' && !activeSessionView.activeProjectId
+                                ? handleOpenFolderDialog
+                                : undefined
+                            }
                             workingFolder={activeWorkingFolder}
                             hideWorkingFolderIndicator
                             isStreaming={isStreaming}
@@ -1390,6 +1399,28 @@ export function Layout({ updateInfo, onOpenUpdateDialog }: LayoutProps): React.J
             </DialogTitle>
           </DialogHeader>
           <PreviewPanel embedded />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={subAgentExecutionDetailOpen}
+        onOpenChange={(open) => {
+          if (!open) closeSubAgentExecutionDetail()
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-[min(1400px,calc(100vw-2rem))] overflow-hidden p-0"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>
+              {t('subAgentsPanel.executionDetailTitle', { defaultValue: '执行详情' })}
+            </DialogTitle>
+          </DialogHeader>
+          <SubAgentExecutionDetail
+            toolUseId={subAgentExecutionDetailToolUseId}
+            onClose={closeSubAgentExecutionDetail}
+          />
         </DialogContent>
       </Dialog>
 

@@ -331,7 +331,10 @@
     "copyOutput": "复制输出",
     "viewDetails": "查看详情",
     "tok": "tok",
-    "toolCalls": "工具调用"
+    "toolCalls": "工具调用",
+    "summaryEmpty": "暂无摘要",
+    "openInRunsRunning": "在右侧执行列表中查看实时进展",
+    "openInRunsDone": "在右侧执行列表中查看完整记录"
   },
   "teamEvent": {
     "teamCreated": "团队已创建",

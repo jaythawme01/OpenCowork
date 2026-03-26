@@ -149,6 +149,8 @@ interface SubAgentState {
   description: string
   prompt: string
   isRunning: boolean
+  success: boolean | null
+  errorMessage: string | null
   iteration: number
   toolCalls: ToolCallState[]
   streamingText: string
@@ -1061,6 +1063,8 @@ export const useAgentStore = create<AgentStore>()(
                     ''
                 ),
                 isRunning: true,
+                success: null,
+                errorMessage: null,
                 iteration: 0,
                 toolCalls: [],
                 streamingText: '',
@@ -1204,6 +1208,8 @@ export const useAgentStore = create<AgentStore>()(
               const sa = state.activeSubAgents[id]
               if (sa) {
                 sa.isRunning = false
+                sa.success = event.result.success
+                sa.errorMessage = event.result.error ?? null
                 sa.completedAt = Date.now()
                 finalizeAssistantMessage(sa)
                 if (!sa.report.trim()) {
