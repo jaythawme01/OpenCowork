@@ -21,6 +21,7 @@ const IMAGE_ITEM = 2
 const VOICE_ITEM = 3
 const FILE_ITEM = 4
 const VIDEO_ITEM = 5
+const DEFAULT_POLL_DELAY_MS = 35000
 
 function extractContent(items?: WeixinMessageItem[]): {
   content: string
@@ -65,11 +66,12 @@ export class WeixinService extends BasePluginService {
   private api!: WeixinApi
   private polling = false
   private pollPromise: Promise<void> | null = null
-  private pollDelayMs = 35000
+  private pollDelayMs = DEFAULT_POLL_DELAY_MS
   private syncBuf = ''
   private pollAbortController: AbortController | null = null
   private contextTokens = new Map<string, string>()
   private messageReplyMeta = new Map<string, { userId: string; contextToken: string }>()
+  private hadPollingIssue = false
 
   protected async resolveWsUrl(): Promise<string | null> {
     return null
@@ -159,6 +161,28 @@ export class WeixinService extends BasePluginService {
     return []
   }
 
+  private resetPollingCursor(): void {
+    this.syncBuf = ''
+    this.pollDelayMs = DEFAULT_POLL_DELAY_MS
+  }
+
+  private getRecoverablePollingIssue(error: unknown): 'request_timeout' | 'session_timeout' | null {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return 'request_timeout'
+    }
+
+    const message = error instanceof Error ? error.message : String(error)
+    if (
+      /session timeout|session expired|invalid session|invalid get_updates_buf|get_updates_buf/i.test(
+        message
+      )
+    ) {
+      return 'session_timeout'
+    }
+
+    return null
+  }
+
   private async runPollingLoop(accountId: string): Promise<void> {
     while (this.polling) {
       try {
@@ -185,6 +209,16 @@ export class WeixinService extends BasePluginService {
           )
         }
 
+        if (this.hadPollingIssue) {
+          this.hadPollingIssue = false
+          this.emit({
+            type: 'status_change',
+            pluginId: this.pluginId,
+            pluginType: this.pluginType,
+            data: 'running'
+          })
+        }
+
         for (const msg of response.msgs || []) {
           void this.handleIncomingMessage(accountId, msg)
         }
@@ -192,13 +226,25 @@ export class WeixinService extends BasePluginService {
         if (!this.polling) {
           break
         }
-        this.emit({
-          type: 'error',
-          pluginId: this.pluginId,
-          pluginType: this.pluginType,
-          data: error instanceof Error ? error.message : String(error)
-        })
-        await new Promise((resolve) => setTimeout(resolve, 3000))
+
+        const recoverableIssue = this.getRecoverablePollingIssue(error)
+        this.hadPollingIssue = true
+
+        if (recoverableIssue === 'session_timeout') {
+          console.warn(`[Weixin:${this.pluginId}] Poll session expired, resetting sync state`)
+          this.resetPollingCursor()
+        } else if (recoverableIssue === 'request_timeout') {
+          console.warn(`[Weixin:${this.pluginId}] Poll request timed out, retrying`)
+        } else {
+          this.emit({
+            type: 'error',
+            pluginId: this.pluginId,
+            pluginType: this.pluginType,
+            data: error instanceof Error ? error.message : String(error)
+          })
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, recoverableIssue ? 1000 : 3000))
       } finally {
         this.pollAbortController = null
       }
