@@ -10,7 +10,11 @@ import {
   MonitorSmartphone,
   Loader2
 } from 'lucide-react'
-import { useProviderStore, modelSupportsVision } from '@renderer/stores/provider-store'
+import {
+  isProviderAvailableForModelSelection,
+  useProviderStore,
+  modelSupportsVision
+} from '@renderer/stores/provider-store'
 import { useSettingsStore } from '@renderer/stores/settings-store'
 import { useChatStore } from '@renderer/stores/chat-store'
 import { useChannelStore } from '@renderer/stores/channel-store'
@@ -369,7 +373,7 @@ export function ModelSwitcher(): React.JSX.Element {
     ? (autoModelRoutingStatesBySession[activeSessionId] ?? 'idle')
     : 'idle'
 
-  const enabledProviders = providers.filter((p) => p.enabled)
+  const enabledProviders = providers.filter((p) => isProviderAvailableForModelSelection(p))
   const activeSession = sessions.find((item) => item.id === activeSessionId)
   const sessionProviderId = activeSession?.providerId ?? null
   const sessionModelId = activeSession?.modelId ?? null

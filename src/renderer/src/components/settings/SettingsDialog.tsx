@@ -10,7 +10,10 @@ import { Slider } from '@renderer/components/ui/slider'
 import { useTheme } from 'next-themes'
 import { useUIStore } from '@renderer/stores/ui-store'
 import { useSettingsStore } from '@renderer/stores/settings-store'
-import { useProviderStore } from '@renderer/stores/provider-store'
+import {
+  isProviderAvailableForModelSelection,
+  useProviderStore
+} from '@renderer/stores/provider-store'
 import { Button } from '@renderer/components/ui/button'
 import {
   Select,
@@ -35,17 +38,36 @@ export function SettingsDialog(): React.JSX.Element {
   const providers = useProviderStore((s) => s.providers)
   const activeProviderId = useProviderStore((s) => s.activeProviderId)
   const activeModelId = useProviderStore((s) => s.activeModelId)
+  const activeFastProviderId = useProviderStore((s) => s.activeFastProviderId)
   const activeFastModelId = useProviderStore((s) => s.activeFastModelId)
   const setActiveProvider = useProviderStore((s) => s.setActiveProvider)
   const setActiveModel = useProviderStore((s) => s.setActiveModel)
+  const setActiveFastProvider = useProviderStore((s) => s.setActiveFastProvider)
   const setActiveFastModel = useProviderStore((s) => s.setActiveFastModel)
 
-  const enabledProviders = providers.filter(
-    (p) => p.enabled && p.models.some((m) => m.enabled && (!m.category || m.category === 'chat'))
-  )
-  const activeProvider = enabledProviders.find((p) => p.id === activeProviderId) ?? null
+  const chatProviderGroups = providers
+    .filter((provider) => isProviderAvailableForModelSelection(provider))
+    .map((provider) => ({
+      provider,
+      models: provider.models.filter(
+        (model) => model.enabled && (!model.category || model.category === 'chat')
+      )
+    }))
+    .filter((group) => group.models.length > 0)
+  const activeProvider =
+    chatProviderGroups.find(({ provider }) => provider.id === activeProviderId)?.provider ?? null
+  const activeFastProvider =
+    chatProviderGroups.find(
+      ({ provider }) => provider.id === (activeFastProviderId ?? activeProviderId)
+    )?.provider ?? activeProvider
   const enabledModels =
-    activeProvider?.models.filter((m) => m.enabled && (!m.category || m.category === 'chat')) ?? []
+    activeProvider?.models.filter(
+      (model) => model.enabled && (!model.category || model.category === 'chat')
+    ) ?? []
+  const fastEnabledModels =
+    activeFastProvider?.models.filter(
+      (model) => model.enabled && (!model.category || model.category === 'chat')
+    ) ?? []
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -57,48 +79,44 @@ export function SettingsDialog(): React.JSX.Element {
 
         <div className="space-y-6 py-2">
           {/* Provider & Model Selection */}
-          {enabledProviders.length > 0 ? (
+          {chatProviderGroups.length > 0 ? (
             <>
-              <section className="space-y-2">
-                <label className="text-sm font-medium">{t('dialog.provider')}</label>
+              <section className="space-y-3">
+                <label className="text-sm font-medium">{t('model.mainModel')}</label>
                 <Select
                   value={activeProvider?.id ?? ''}
-                  onValueChange={(v) => setActiveProvider(v)}
+                  onValueChange={(value) => setActiveProvider(value)}
                 >
                   <SelectTrigger className="w-full text-xs">
                     <SelectValue placeholder={t('dialog.selectProvider')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {enabledProviders.map((p) => (
-                      <SelectItem key={p.id} value={p.id} className="text-xs">
+                    {chatProviderGroups.map(({ provider }) => (
+                      <SelectItem key={provider.id} value={provider.id} className="text-xs">
                         <span className="flex items-center gap-2">
-                          <ProviderIcon builtinId={p.builtinId} size={14} />
-                          {p.name}
+                          <ProviderIcon builtinId={provider.builtinId} size={14} />
+                          {provider.name}
                         </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </section>
-
-              <section className="space-y-2">
-                <label className="text-sm font-medium">{t('dialog.model')}</label>
                 {enabledModels.length > 0 ? (
-                  <Select value={activeModelId} onValueChange={(v) => setActiveModel(v)}>
+                  <Select value={activeModelId} onValueChange={(value) => setActiveModel(value)}>
                     <SelectTrigger className="w-full text-xs">
-                      <SelectValue placeholder="Select model" />
+                      <SelectValue placeholder={t('model.selectModel')} />
                     </SelectTrigger>
                     <SelectContent>
-                      {enabledModels.map((m) => (
-                        <SelectItem key={m.id} value={m.id} className="text-xs">
+                      {enabledModels.map((model) => (
+                        <SelectItem key={model.id} value={model.id} className="text-xs">
                           <span className="flex items-center gap-2">
                             <ModelIcon
-                              icon={m.icon}
-                              modelId={m.id}
+                              icon={model.icon}
+                              modelId={model.id}
                               providerBuiltinId={activeProvider?.builtinId}
                               size={14}
                             />
-                            {m.name}
+                            {model.name}
                           </span>
                         </SelectItem>
                       ))}
@@ -109,28 +127,54 @@ export function SettingsDialog(): React.JSX.Element {
                 )}
               </section>
 
-              <section className="space-y-2">
-                <label className="text-sm font-medium">{t('dialog.fastModel')}</label>
-                <p className="text-[10px] text-muted-foreground/60">{t('dialog.fastModelDesc')}</p>
-                {enabledModels.length > 0 ? (
+              <section className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium">{t('dialog.fastModel')}</label>
+                  <p className="text-[10px] text-muted-foreground/60">
+                    {t('dialog.fastModelDesc')}
+                  </p>
+                </div>
+                <Select
+                  value={activeFastProvider?.id ?? ''}
+                  onValueChange={(value) => setActiveFastProvider(value)}
+                >
+                  <SelectTrigger className="w-full text-xs">
+                    <SelectValue placeholder={t('dialog.selectProvider')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chatProviderGroups.map(({ provider }) => (
+                      <SelectItem
+                        key={`${provider.id}-fast`}
+                        value={provider.id}
+                        className="text-xs"
+                      >
+                        <span className="flex items-center gap-2">
+                          <ProviderIcon builtinId={provider.builtinId} size={14} />
+                          {provider.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {fastEnabledModels.length > 0 ? (
                   <Select
-                    value={activeFastModelId || enabledModels[0]?.id || ''}
-                    onValueChange={(v) => setActiveFastModel(v)}
+                    value={activeFastModelId || fastEnabledModels[0]?.id || ''}
+                    onValueChange={(value) => setActiveFastModel(value)}
                   >
                     <SelectTrigger className="w-full text-xs">
-                      <SelectValue placeholder="Select fast model" />
+                      <SelectValue placeholder={t('model.selectFastModel')} />
                     </SelectTrigger>
                     <SelectContent>
-                      {enabledModels.map((m) => (
-                        <SelectItem key={m.id} value={m.id} className="text-xs">
+                      {fastEnabledModels.map((model) => (
+                        <SelectItem key={`fast-${model.id}`} value={model.id} className="text-xs">
                           <span className="flex items-center gap-2">
                             <ModelIcon
-                              icon={m.icon}
-                              modelId={m.id}
-                              providerBuiltinId={activeProvider?.builtinId}
+                              icon={model.icon}
+                              modelId={model.id}
+                              providerBuiltinId={activeFastProvider?.builtinId}
                               size={14}
                             />
-                            {m.name}
+                            {model.name}
                           </span>
                         </SelectItem>
                       ))}

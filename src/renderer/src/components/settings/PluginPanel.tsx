@@ -27,7 +27,10 @@ import {
 } from '@renderer/components/ui/accordion'
 import { useChannelStore } from '@renderer/stores/channel-store'
 import { useChatStore } from '@renderer/stores/chat-store'
-import { useProviderStore } from '@renderer/stores/provider-store'
+import {
+  isProviderAvailableForModelSelection,
+  useProviderStore
+} from '@renderer/stores/provider-store'
 import { ProviderIcon, ModelIcon } from '@renderer/components/settings/provider-icons'
 import { cn } from '@renderer/lib/utils'
 import type { PluginInstance, PluginFeatures, PluginPermissions } from '@renderer/lib/channel/types'
@@ -114,7 +117,10 @@ function ChannelConfigPanelContent({
   const projects = useChatStore((s) => s.projects)
   const activeProviderId = useProviderStore((s) => s.activeProviderId)
   const activeModelId = useProviderStore((s) => s.activeModelId)
-  const enabledProviders = useMemo(() => providers.filter((p) => p.enabled), [providers])
+  const enabledProviders = useMemo(
+    () => providers.filter((p) => isProviderAvailableForModelSelection(p)),
+    [providers]
+  )
   const [modelPopoverOpen, setModelPopoverOpen] = useState(false)
 
   // Get global default model info

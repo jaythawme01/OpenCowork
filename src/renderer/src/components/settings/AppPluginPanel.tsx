@@ -11,7 +11,10 @@ import {
 } from '@renderer/components/ui/select'
 import { Separator } from '@renderer/components/ui/separator'
 import { ProviderIcon, ModelIcon } from './provider-icons'
-import { useProviderStore } from '@renderer/stores/provider-store'
+import {
+  isProviderAvailableForModelSelection,
+  useProviderStore
+} from '@renderer/stores/provider-store'
 import { useChatStore } from '@renderer/stores/chat-store'
 import { useAppPluginStore } from '@renderer/stores/app-plugin-store'
 import {
@@ -78,7 +81,7 @@ export function AppPluginPanel(): React.JSX.Element {
   const imageProviderGroups = useMemo(
     () =>
       providers
-        .filter((provider) => provider.enabled)
+        .filter((provider) => isProviderAvailableForModelSelection(provider))
         .map((provider) => ({
           provider,
           models: provider.models.filter((model) => model.enabled && model.category === 'image')
@@ -88,7 +91,9 @@ export function AppPluginPanel(): React.JSX.Element {
   )
 
   const visibleDescriptors = useMemo(() => APP_PLUGIN_DESCRIPTORS.filter((d) => !d.hidden), [])
-  const selectedPlugin = useAppPluginStore((state) => state.getPlugin(selectedPluginId, activeProjectId))
+  const selectedPlugin = useAppPluginStore((state) =>
+    state.getPlugin(selectedPluginId, activeProjectId)
+  )
   const selectedDescriptor =
     visibleDescriptors.find((descriptor) => descriptor.id === selectedPluginId) ??
     visibleDescriptors[0] ??

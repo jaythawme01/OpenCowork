@@ -85,7 +85,11 @@ import { IPC } from '@renderer/lib/ipc/channels'
 import { ipcClient } from '@renderer/lib/ipc/ipc-client'
 import { recordUsageEvent } from '@renderer/lib/usage-analytics'
 import { cn } from '@renderer/lib/utils'
-import { modelSupportsVision, useProviderStore } from '@renderer/stores/provider-store'
+import {
+  isProviderAvailableForModelSelection,
+  modelSupportsVision,
+  useProviderStore
+} from '@renderer/stores/provider-store'
 import { useUIStore } from '@renderer/stores/ui-store'
 
 interface ProviderModelGroup {
@@ -133,7 +137,7 @@ function pickFastTextModel(
 ): { provider: AIProvider; model: AIModelConfig; config: ProviderConfig } | null {
   const enabledProviders = providers.filter(
     (provider) =>
-      provider.enabled &&
+      isProviderAvailableForModelSelection(provider) &&
       provider.models.some((model) => model.enabled && (model.category ?? 'chat') === 'chat')
   )
 
@@ -846,7 +850,10 @@ export function DrawPage(): React.JSX.Element {
               providerId: target.provider.id,
               modelId: target.model.id,
               usage: event.usage,
-              timing: event.timing ?? { totalMs: Date.now() - requestStartedAt, ttftMs: Date.now() - requestStartedAt },
+              timing: event.timing ?? {
+                totalMs: Date.now() - requestStartedAt,
+                ttftMs: Date.now() - requestStartedAt
+              },
               providerResponseId: event.providerResponseId,
               createdAt: Date.now(),
               meta: { drawRunId: runId, mode: 'image' }
@@ -1080,7 +1087,10 @@ export function DrawPage(): React.JSX.Element {
                 providerId: target.provider.id,
                 modelId: target.model.id,
                 usage: event.usage,
-                timing: event.timing ?? { totalMs: Date.now() - requestStartedAt, ttftMs: Date.now() - requestStartedAt },
+                timing: event.timing ?? {
+                  totalMs: Date.now() - requestStartedAt,
+                  ttftMs: Date.now() - requestStartedAt
+                },
                 providerResponseId: event.providerResponseId,
                 createdAt: Date.now(),
                 meta: { drawRunId: runId, mode: 'gif' }

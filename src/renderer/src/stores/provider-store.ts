@@ -20,6 +20,10 @@ export type { BuiltinProviderPreset }
 
 const DEFAULT_FAST_PROVIDER_BUILTIN_ID = 'routin-ai'
 const DEFAULT_FAST_MODEL_ID = 'doubao-seed-2-0-mini-260215'
+const LEGACY_BUILTIN_DEPRECATED_MODEL_IDS = [
+  'gemini-3.1-flash-lite-preview',
+  'gemini-3-flash-preview'
+]
 
 // --- Helper: create AIProvider from preset ---
 
@@ -65,6 +69,37 @@ export function modelSupportsComputerUse(
   if (!model) return false
   const requestType = model.type ?? providerType
   return requestType === 'openai-responses' && model.supportsComputerUse === true
+}
+
+export function isProviderAuthReady(provider: AIProvider | null | undefined): boolean {
+  if (!provider) return false
+
+  const authMode = provider.authMode ?? 'apiKey'
+  if (authMode === 'apiKey') {
+    return provider.requiresApiKey === false || provider.apiKey.trim().length > 0
+  }
+  if (authMode === 'oauth') {
+    return Boolean(provider.oauth?.accessToken)
+  }
+  if (authMode === 'channel') {
+    return Boolean(provider.channel?.accessToken)
+  }
+  return false
+}
+
+export function isProviderAvailableForModelSelection(
+  provider: AIProvider | null | undefined
+): boolean {
+  if (!provider?.enabled) return false
+  return isProviderAuthReady(provider)
+}
+
+export function getEnabledModelsByCategory(
+  provider: AIProvider | null | undefined,
+  category: ModelCategory
+): AIModelConfig[] {
+  if (!provider) return []
+  return provider.models.filter((model) => model.enabled && (model.category ?? 'chat') === category)
 }
 
 export function isModelComputerUseEnabled(
@@ -176,7 +211,7 @@ function mergeBuiltinModels(
 ): AIModelConfig[] {
   const existingById = new Map(existingModels.map((model) => [model.id, model]))
   const presetIds = new Set(presetModels.map((model) => model.id))
-  const deprecatedIds = new Set(deprecatedModelIds)
+  const deprecatedIds = new Set([...LEGACY_BUILTIN_DEPRECATED_MODEL_IDS, ...deprecatedModelIds])
 
   // Keep preset order for builtin models; preserve user's enabled state and capability overrides.
   const capabilityKeys: (keyof AIModelConfig)[] = [
@@ -213,24 +248,37 @@ function mergeBuiltinModels(
 }
 
 function resolveProviderDefaultModelId(provider: AIProvider): string {
-  // Try to use the configured default model first
-  if (provider.defaultModel) {
-    const defaultModel = provider.models.find((m) => m.id === provider.defaultModel)
-    if (defaultModel) return defaultModel.id
-  }
+  const defaultModel = provider.defaultModel
+    ? provider.models.find((model) => model.id === provider.defaultModel)
+    : null
+  if (defaultModel?.enabled) return defaultModel.id
 
-  // Fall back to first enabled model, then first model
-  const enabledModels = provider.models.filter((m) => m.enabled)
-  return enabledModels[0]?.id ?? provider.models[0]?.id ?? ''
+  const enabledModels = provider.models.filter((model) => model.enabled)
+  if (enabledModels[0]) return enabledModels[0].id
+
+  return defaultModel?.id ?? provider.models[0]?.id ?? ''
 }
 
 function resolveProviderDefaultModelIdByCategory(
   provider: AIProvider,
   category: ModelCategory
 ): string {
-  const categoryModels = provider.models.filter((m) => (m.category ?? 'chat') === category)
-  const enabledModels = categoryModels.filter((m) => m.enabled)
-  return enabledModels[0]?.id ?? categoryModels[0]?.id ?? ''
+  const defaultModel = provider.defaultModel
+    ? provider.models.find((model) => model.id === provider.defaultModel)
+    : null
+  if (defaultModel?.enabled && (defaultModel.category ?? 'chat') === category) {
+    return defaultModel.id
+  }
+
+  const categoryModels = provider.models.filter((model) => (model.category ?? 'chat') === category)
+  const enabledModels = categoryModels.filter((model) => model.enabled)
+  if (enabledModels[0]) return enabledModels[0].id
+
+  if (defaultModel && (defaultModel.category ?? 'chat') === category) {
+    return defaultModel.id
+  }
+
+  return categoryModels[0]?.id ?? ''
 }
 
 function resolveDefaultFastSelection(
@@ -238,7 +286,7 @@ function resolveDefaultFastSelection(
 ): { providerId: string; modelId: string } | null {
   const preferredProvider = providers.find(
     (provider) =>
-      provider.enabled &&
+      isProviderAvailableForModelSelection(provider) &&
       provider.builtinId === DEFAULT_FAST_PROVIDER_BUILTIN_ID &&
       provider.models.some((model) => model.enabled && (model.category ?? 'chat') === 'chat')
   )
@@ -271,16 +319,11 @@ function resolveFirstProviderIdByCategory(
   providers: AIProvider[],
   category: ModelCategory
 ): string | null {
-  const enabledProvider = providers.find(
-    (provider) =>
-      provider.enabled &&
-      provider.models.some((model) => model.enabled && (model.category ?? 'chat') === category)
-  )
-  if (enabledProvider) return enabledProvider.id
-
   return (
-    providers.find((provider) =>
-      provider.models.some((model) => (model.category ?? 'chat') === category)
+    providers.find(
+      (provider) =>
+        isProviderAvailableForModelSelection(provider) &&
+        provider.models.some((model) => model.enabled && (model.category ?? 'chat') === category)
     )?.id ?? null
   )
 }
@@ -362,6 +405,129 @@ interface ProviderStore {
   _markMigrated: () => void
 }
 
+type ProviderSelectionState = Pick<
+  ProviderStore,
+  | 'activeProviderId'
+  | 'activeModelId'
+  | 'activeFastProviderId'
+  | 'activeFastModelId'
+  | 'activeTranslationProviderId'
+  | 'activeTranslationModelId'
+  | 'activeSpeechProviderId'
+  | 'activeSpeechModelId'
+  | 'activeImageProviderId'
+  | 'activeImageModelId'
+>
+
+function resolveProviderSelectionByCategory(
+  providers: AIProvider[],
+  providerId: string | null,
+  modelId: string,
+  category: ModelCategory
+): { providerId: string | null; modelId: string } {
+  const currentProvider = providerId
+    ? providers.find((provider) => provider.id === providerId)
+    : null
+  const hasEnabledCategoryModel = currentProvider?.models.some(
+    (model) => model.enabled && (model.category ?? 'chat') === category
+  )
+
+  if (
+    currentProvider &&
+    hasEnabledCategoryModel &&
+    isProviderAvailableForModelSelection(currentProvider)
+  ) {
+    const nextModelId = resolveValidModelIdByCategory(currentProvider, modelId, category)
+    if (nextModelId) {
+      return { providerId: currentProvider.id, modelId: nextModelId }
+    }
+  }
+
+  const fallbackProviderId = resolveFirstProviderIdByCategory(providers, category)
+  if (!fallbackProviderId) {
+    return { providerId: null, modelId: '' }
+  }
+
+  const fallbackProvider = providers.find((provider) => provider.id === fallbackProviderId)
+  if (!fallbackProvider) {
+    return { providerId: null, modelId: '' }
+  }
+
+  const fallbackModelId = resolveValidModelIdByCategory(fallbackProvider, '', category)
+  if (!fallbackModelId) {
+    return { providerId: null, modelId: '' }
+  }
+
+  return { providerId: fallbackProvider.id, modelId: fallbackModelId }
+}
+
+function buildNormalizedProviderState(
+  state: ProviderSelectionState,
+  providers: AIProvider[]
+): Partial<ProviderStore> {
+  const mainSelection = resolveProviderSelectionByCategory(
+    providers,
+    state.activeProviderId,
+    state.activeModelId,
+    'chat'
+  )
+
+  const explicitFastSelection = state.activeFastProviderId
+    ? resolveProviderSelectionByCategory(
+        providers,
+        state.activeFastProviderId,
+        state.activeFastModelId,
+        'chat'
+      )
+    : { providerId: null, modelId: '' }
+  const fastSelection =
+    explicitFastSelection.providerId && explicitFastSelection.modelId
+      ? explicitFastSelection
+      : (resolveDefaultFastSelection(providers) ??
+        resolveProviderSelectionByCategory(
+          providers,
+          mainSelection.providerId,
+          state.activeFastModelId || mainSelection.modelId,
+          'chat'
+        ))
+
+  const translationSelection = resolveProviderSelectionByCategory(
+    providers,
+    state.activeTranslationProviderId ?? mainSelection.providerId,
+    state.activeTranslationModelId,
+    'chat'
+  )
+
+  const imageSelection = resolveProviderSelectionByCategory(
+    providers,
+    state.activeImageProviderId,
+    state.activeImageModelId,
+    'image'
+  )
+
+  const speechSelection = state.activeSpeechProviderId
+    ? resolveProviderSelectionByCategory(
+        providers,
+        state.activeSpeechProviderId,
+        state.activeSpeechModelId,
+        'speech'
+      )
+    : { providerId: null, modelId: '' }
+
+  return {
+    activeProviderId: mainSelection.providerId,
+    activeModelId: mainSelection.modelId,
+    activeFastProviderId: fastSelection.providerId,
+    activeFastModelId: fastSelection.modelId,
+    activeTranslationProviderId: translationSelection.providerId,
+    activeTranslationModelId: translationSelection.modelId,
+    activeSpeechProviderId: speechSelection.providerId,
+    activeSpeechModelId: speechSelection.modelId,
+    activeImageProviderId: imageSelection.providerId,
+    activeImageModelId: imageSelection.modelId
+  }
+}
+
 export const useProviderStore = create<ProviderStore>()(
   persist(
     (set, get) => ({
@@ -378,7 +544,14 @@ export const useProviderStore = create<ProviderStore>()(
       activeImageModelId: '',
       _migrated: false,
 
-      addProvider: (provider) => set((s) => ({ providers: [...s.providers, provider] })),
+      addProvider: (provider) =>
+        set((state) => {
+          const providers = [...state.providers, provider]
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
+          }
+        }),
 
       addProviderFromPreset: (builtinId) => {
         const preset = builtinProviderPresets.find((p) => p.builtinId === builtinId)
@@ -386,162 +559,258 @@ export const useProviderStore = create<ProviderStore>()(
         const existing = get().providers.find((p) => p.builtinId === builtinId)
         if (existing) return existing.id
         const provider = createProviderFromPreset(preset)
-        set((s) => ({ providers: [...s.providers, provider] }))
+        set((state) => {
+          const providers = [...state.providers, provider]
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
+          }
+        })
         return provider.id
       },
 
       updateProvider: (id, patch) =>
-        set((s) => ({
-          providers: s.providers.map((p) => (p.id === id ? { ...p, ...patch } : p))
-        })),
-
-      removeProvider: (id) =>
-        set((s) => ({
-          providers: s.providers.filter((p) => p.id !== id),
-          activeProviderId: s.activeProviderId === id ? null : s.activeProviderId,
-          activeTranslationProviderId:
-            s.activeTranslationProviderId === id ? null : s.activeTranslationProviderId,
-          activeTranslationModelId:
-            s.activeTranslationProviderId === id ? '' : s.activeTranslationModelId,
-          activeSpeechProviderId: s.activeSpeechProviderId === id ? null : s.activeSpeechProviderId,
-          activeSpeechModelId: s.activeSpeechProviderId === id ? '' : s.activeSpeechModelId,
-          activeImageProviderId: s.activeImageProviderId === id ? null : s.activeImageProviderId,
-          activeImageModelId: s.activeImageProviderId === id ? '' : s.activeImageModelId,
-          activeFastProviderId: s.activeFastProviderId === id ? null : s.activeFastProviderId,
-          activeFastModelId: s.activeFastProviderId === id ? '' : s.activeFastModelId
-        })),
-
-      toggleProviderEnabled: (id) =>
-        set((s) => ({
-          providers: s.providers.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p))
-        })),
-
-      addModel: (providerId, model) =>
-        set((s) => ({
-          providers: s.providers.map((p) =>
-            p.id === providerId ? { ...p, models: [...p.models, model] } : p
-          )
-        })),
-
-      updateModel: (providerId, modelId, patch) =>
-        set((s) => ({
-          providers: s.providers.map((p) =>
-            p.id === providerId
-              ? {
-                  ...p,
-                  models: p.models.map((m) => (m.id === modelId ? { ...m, ...patch } : m))
-                }
-              : p
-          )
-        })),
-
-      removeModel: (providerId, modelId) =>
-        set((s) => ({
-          providers: s.providers.map((p) =>
-            p.id === providerId ? { ...p, models: p.models.filter((m) => m.id !== modelId) } : p
-          )
-        })),
-
-      toggleModelEnabled: (providerId, modelId) =>
-        set((s) => ({
-          providers: s.providers.map((p) =>
-            p.id === providerId
-              ? {
-                  ...p,
-                  models: p.models.map((m) =>
-                    m.id === modelId ? { ...m, enabled: !m.enabled } : m
-                  )
-                }
-              : p
-          )
-        })),
-
-      setProviderModels: (providerId, models) =>
-        set((s) => ({
-          providers: s.providers.map((p) => (p.id === providerId ? { ...p, models } : p))
-        })),
-
-      setActiveProvider: (providerId) => {
-        const provider = get().providers.find((p) => p.id === providerId)
-        if (!provider) return
-
-        const defaultModelId =
-          resolveProviderDefaultModelIdByCategory(provider, 'chat') ||
-          resolveProviderDefaultModelId(provider)
-
         set((state) => {
-          const nextState: Partial<ProviderStore> = {
-            activeProviderId: providerId,
-            activeModelId: defaultModelId
+          const providers = state.providers.map((provider) =>
+            provider.id === id ? { ...provider, ...patch } : provider
+          )
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
           }
-
-          if (!state.activeFastProviderId) {
-            nextState.activeFastProviderId = providerId
-            nextState.activeFastModelId = defaultModelId
-          }
-
-          return nextState as ProviderStore
-        })
-      },
-
-      setActiveModel: (modelId) => set({ activeModelId: modelId }),
-
-      setActiveFastProvider: (providerId) => {
-        const provider = get().providers.find((p) => p.id === providerId)
-        if (!provider) return
-        const defaultModelId =
-          resolveProviderDefaultModelIdByCategory(provider, 'chat') ||
-          resolveProviderDefaultModelId(provider)
-        set({ activeFastProviderId: providerId, activeFastModelId: defaultModelId })
-      },
-
-      setActiveFastModel: (modelId) =>
-        set((state) => {
-          const providerId = state.activeFastProviderId ?? state.activeProviderId
-          if (!providerId) return {}
-          const provider = state.providers.find((p) => p.id === providerId)
-          if (!provider) return {}
-          const modelExists = provider.models.some((m) => m.id === modelId)
-          return modelExists ? { activeFastModelId: modelId } : {}
         }),
 
-      setActiveTranslationProvider: (providerId) => {
-        const provider = get().providers.find((p) => p.id === providerId)
-        if (!provider) return
-        const defaultModelId =
-          resolveProviderDefaultModelIdByCategory(provider, 'chat') ||
-          resolveProviderDefaultModelId(provider)
-        set({
-          activeTranslationProviderId: providerId,
-          activeTranslationModelId: defaultModelId
-        })
-      },
+      removeProvider: (id) =>
+        set((state) => {
+          const providers = state.providers.filter((provider) => provider.id !== id)
+          return {
+            providers,
+            ...buildNormalizedProviderState(
+              {
+                ...state,
+                activeProviderId: state.activeProviderId === id ? null : state.activeProviderId,
+                activeModelId: state.activeProviderId === id ? '' : state.activeModelId,
+                activeTranslationProviderId:
+                  state.activeTranslationProviderId === id
+                    ? null
+                    : state.activeTranslationProviderId,
+                activeTranslationModelId:
+                  state.activeTranslationProviderId === id ? '' : state.activeTranslationModelId,
+                activeSpeechProviderId:
+                  state.activeSpeechProviderId === id ? null : state.activeSpeechProviderId,
+                activeSpeechModelId:
+                  state.activeSpeechProviderId === id ? '' : state.activeSpeechModelId,
+                activeImageProviderId:
+                  state.activeImageProviderId === id ? null : state.activeImageProviderId,
+                activeImageModelId:
+                  state.activeImageProviderId === id ? '' : state.activeImageModelId,
+                activeFastProviderId:
+                  state.activeFastProviderId === id ? null : state.activeFastProviderId,
+                activeFastModelId: state.activeFastProviderId === id ? '' : state.activeFastModelId
+              },
+              providers
+            )
+          }
+        }),
 
-      setActiveTranslationModel: (modelId) => set({ activeTranslationModelId: modelId }),
+      toggleProviderEnabled: (id) =>
+        set((state) => {
+          const providers = state.providers.map((provider) =>
+            provider.id === id ? { ...provider, enabled: !provider.enabled } : provider
+          )
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
+          }
+        }),
 
-      setActiveSpeechProvider: (providerId) => {
-        const provider = get().providers.find((p) => p.id === providerId)
-        if (!provider) return
-        const defaultModelId = resolveProviderDefaultModelIdByCategory(provider, 'speech')
-        set({
-          activeSpeechProviderId: providerId,
-          activeSpeechModelId: defaultModelId
-        })
-      },
+      addModel: (providerId, model) =>
+        set((state) => {
+          const providers = state.providers.map((provider) =>
+            provider.id === providerId
+              ? { ...provider, models: [...provider.models, model] }
+              : provider
+          )
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
+          }
+        }),
 
-      setActiveSpeechModel: (modelId) => set({ activeSpeechModelId: modelId }),
+      updateModel: (providerId, modelId, patch) =>
+        set((state) => {
+          const providers = state.providers.map((provider) =>
+            provider.id === providerId
+              ? {
+                  ...provider,
+                  models: provider.models.map((model) =>
+                    model.id === modelId ? { ...model, ...patch } : model
+                  )
+                }
+              : provider
+          )
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
+          }
+        }),
 
-      setActiveImageProvider: (providerId) => {
-        const provider = get().providers.find((p) => p.id === providerId)
-        if (!provider) return
-        const defaultModelId = resolveProviderDefaultModelIdByCategory(provider, 'image')
-        set({
-          activeImageProviderId: providerId,
-          activeImageModelId: defaultModelId
-        })
-      },
+      removeModel: (providerId, modelId) =>
+        set((state) => {
+          const providers = state.providers.map((provider) =>
+            provider.id === providerId
+              ? { ...provider, models: provider.models.filter((model) => model.id !== modelId) }
+              : provider
+          )
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
+          }
+        }),
 
-      setActiveImageModel: (modelId) => set({ activeImageModelId: modelId }),
+      toggleModelEnabled: (providerId, modelId) =>
+        set((state) => {
+          const providers = state.providers.map((provider) =>
+            provider.id === providerId
+              ? {
+                  ...provider,
+                  models: provider.models.map((model) =>
+                    model.id === modelId ? { ...model, enabled: !model.enabled } : model
+                  )
+                }
+              : provider
+          )
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
+          }
+        }),
+
+      setProviderModels: (providerId, models) =>
+        set((state) => {
+          const providers = state.providers.map((provider) =>
+            provider.id === providerId ? { ...provider, models } : provider
+          )
+          return {
+            providers,
+            ...buildNormalizedProviderState(state, providers)
+          }
+        }),
+
+      setActiveProvider: (providerId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeProviderId: providerId,
+              activeModelId: ''
+            },
+            state.providers
+          )
+        ),
+
+      setActiveModel: (modelId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeModelId: modelId
+            },
+            state.providers
+          )
+        ),
+
+      setActiveFastProvider: (providerId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeFastProviderId: providerId,
+              activeFastModelId: ''
+            },
+            state.providers
+          )
+        ),
+
+      setActiveFastModel: (modelId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeFastModelId: modelId
+            },
+            state.providers
+          )
+        ),
+
+      setActiveTranslationProvider: (providerId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeTranslationProviderId: providerId,
+              activeTranslationModelId: ''
+            },
+            state.providers
+          )
+        ),
+
+      setActiveTranslationModel: (modelId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeTranslationModelId: modelId
+            },
+            state.providers
+          )
+        ),
+
+      setActiveSpeechProvider: (providerId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeSpeechProviderId: providerId,
+              activeSpeechModelId: ''
+            },
+            state.providers
+          )
+        ),
+
+      setActiveSpeechModel: (modelId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeSpeechModelId: modelId
+            },
+            state.providers
+          )
+        ),
+
+      setActiveImageProvider: (providerId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeImageProviderId: providerId,
+              activeImageModelId: ''
+            },
+            state.providers
+          )
+        ),
+
+      setActiveImageModel: (modelId) =>
+        set((state) =>
+          buildNormalizedProviderState(
+            {
+              ...state,
+              activeImageModelId: modelId
+            },
+            state.providers
+          )
+        ),
 
       getActiveProvider: () => {
         const { providers, activeProviderId } = get()
@@ -721,16 +990,35 @@ export const useProviderStore = create<ProviderStore>()(
       },
 
       getFastProviderConfig: () => {
-        const { providers, activeProviderId, activeFastProviderId, activeFastModelId } = get()
-        const providerId = activeFastProviderId ?? activeProviderId
-        if (!providerId) return null
-        const provider = providers.find((p) => p.id === providerId)
+        const {
+          providers,
+          activeProviderId,
+          activeModelId,
+          activeFastProviderId,
+          activeFastModelId
+        } = get()
+        const explicitFastSelection = activeFastProviderId
+          ? resolveProviderSelectionByCategory(
+              providers,
+              activeFastProviderId,
+              activeFastModelId,
+              'chat'
+            )
+          : { providerId: null, modelId: '' }
+        const resolvedFastSelection =
+          explicitFastSelection.providerId && explicitFastSelection.modelId
+            ? explicitFastSelection
+            : (resolveDefaultFastSelection(providers) ??
+              resolveProviderSelectionByCategory(
+                providers,
+                activeProviderId,
+                activeFastModelId || activeModelId,
+                'chat'
+              ))
+        if (!resolvedFastSelection.providerId || !resolvedFastSelection.modelId) return null
+        const provider = providers.find((p) => p.id === resolvedFastSelection.providerId)
         if (!provider) return null
-        const model =
-          (activeFastModelId && provider.models.some((m) => m.id === activeFastModelId)
-            ? activeFastModelId
-            : resolveProviderDefaultModelIdByCategory(provider, 'chat') ||
-              resolveProviderDefaultModelId(provider)) || ''
+        const model = resolvedFastSelection.modelId
         const fastModel = provider.models.find((m) => m.id === model)
 
         // Image models should respect explicit protocol overrides (e.g. Gemini).
@@ -1117,9 +1405,9 @@ function ensureBuiltinPresets(): void {
 
   if (!useProviderStore.getState().activeProviderId) {
     const providers = useProviderStore.getState().providers
-    const firstEnabled = providers.find((p) => p.enabled)
-    if (firstEnabled) {
-      useProviderStore.getState().setActiveProvider(firstEnabled.id)
+    const firstAvailableProviderId = resolveFirstProviderIdByCategory(providers, 'chat')
+    if (firstAvailableProviderId) {
+      useProviderStore.getState().setActiveProvider(firstAvailableProviderId)
     }
   }
 

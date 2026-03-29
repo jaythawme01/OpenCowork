@@ -34,7 +34,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui
 import { ModelIcon, ProviderIcon } from '@renderer/components/settings/provider-icons'
 import { cn } from '@renderer/lib/utils'
 import { useUIStore } from '@renderer/stores/ui-store'
-import { useProviderStore } from '@renderer/stores/provider-store'
+import {
+  isProviderAvailableForModelSelection,
+  useProviderStore
+} from '@renderer/stores/provider-store'
 import { useTranslateStore } from '@renderer/stores/translate-store'
 import type { AgentStep } from '@renderer/stores/translate-store'
 
@@ -260,7 +263,7 @@ export function TranslatePage(): React.JSX.Element {
   )
 
   const enabledProviders = useMemo(
-    () => providers.filter((provider) => provider.enabled),
+    () => providers.filter((provider) => isProviderAvailableForModelSelection(provider)),
     [providers]
   )
 

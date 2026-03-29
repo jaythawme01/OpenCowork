@@ -47,7 +47,10 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { FadeIn, SlideIn } from '@renderer/components/animate-ui'
-import { useProviderStore } from '@renderer/stores/provider-store'
+import {
+  isProviderAvailableForModelSelection,
+  useProviderStore
+} from '@renderer/stores/provider-store'
 import { ProviderPanel } from './ProviderPanel'
 import { ChannelPanel } from './PluginPanel'
 import { AppPluginPanel } from './AppPluginPanel'
@@ -1803,7 +1806,7 @@ function ModelPanel(): React.JSX.Element {
   const setActiveImageProvider = useProviderStore((s) => s.setActiveImageProvider)
   const setActiveImageModel = useProviderStore((s) => s.setActiveImageModel)
 
-  const enabledProviders = providers.filter((p) => p.enabled)
+  const enabledProviders = providers.filter((p) => isProviderAvailableForModelSelection(p))
   const chatProviderGroups = enabledProviders
     .map((provider) => ({
       provider,
