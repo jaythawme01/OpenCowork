@@ -13,7 +13,10 @@ import type { ProviderConfig, ToolDefinition, UnifiedMessage } from '@renderer/l
 import type { ToolContext, ToolHandler } from '@renderer/lib/tools/tool-types'
 import type { SubAgentDefinition } from '@renderer/lib/agent/sub-agents/types'
 import { useProviderStore } from '@renderer/stores/provider-store'
-import { useSettingsStore } from '@renderer/stores/settings-store'
+import {
+  useSettingsStore,
+  resolveReasoningEffortForModel
+} from '@renderer/stores/settings-store'
 
 export type WikiGenerationMode = 'full' | 'regenerate' | 'incremental'
 
@@ -296,6 +299,13 @@ function getProviderConfig(sessionId: string): ProviderConfig | null {
     ? Math.min(settings.maxTokens, modelConfig.maxOutputTokens)
     : settings.maxTokens
   const thinkingEnabled = settings.thinkingEnabled && !!modelConfig?.thinkingConfig
+  const reasoningEffort = resolveReasoningEffortForModel({
+    reasoningEffort: settings.reasoningEffort,
+    reasoningEffortByModel: settings.reasoningEffortByModel,
+    providerId: providerConfig.providerId,
+    modelId: modelConfig?.id ?? providerConfig.model,
+    thinkingConfig: modelConfig?.thinkingConfig
+  })
 
   return {
     ...providerConfig,
@@ -304,7 +314,7 @@ function getProviderConfig(sessionId: string): ProviderConfig | null {
     systemPrompt: settings.systemPrompt || undefined,
     thinkingEnabled,
     thinkingConfig: modelConfig?.thinkingConfig,
-    reasoningEffort: settings.reasoningEffort,
+    reasoningEffort,
     responseSummary: modelConfig?.responseSummary ?? providerConfig.responseSummary,
     enablePromptCache: modelConfig?.enablePromptCache ?? providerConfig.enablePromptCache,
     enableSystemPromptCache:

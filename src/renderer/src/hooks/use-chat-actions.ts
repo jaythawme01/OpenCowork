@@ -2,7 +2,10 @@ import { useCallback, useEffect } from 'react'
 import { nanoid } from 'nanoid'
 import { toast } from 'sonner'
 import { useChatStore } from '@renderer/stores/chat-store'
-import { useSettingsStore } from '@renderer/stores/settings-store'
+import {
+  useSettingsStore,
+  resolveReasoningEffortForModel
+} from '@renderer/stores/settings-store'
 import { useProviderStore } from '@renderer/stores/provider-store'
 import { ensureProviderAuthReady } from '@renderer/lib/auth/provider-auth'
 import { useAgentStore } from '@renderer/stores/agent-store'
@@ -200,6 +203,13 @@ function buildProviderConfigWithRuntimeSettings(
     ? Math.min(settings.maxTokens, modelConfig.maxOutputTokens)
     : settings.maxTokens
   const thinkingEnabled = settings.thinkingEnabled && !!modelConfig?.thinkingConfig
+  const reasoningEffort = resolveReasoningEffortForModel({
+    reasoningEffort: settings.reasoningEffort,
+    reasoningEffortByModel: settings.reasoningEffortByModel,
+    providerId: providerConfig.providerId,
+    modelId: modelConfig?.id ?? providerConfig.model,
+    thinkingConfig: modelConfig?.thinkingConfig
+  })
 
   return {
     ...providerConfig,
@@ -208,7 +218,7 @@ function buildProviderConfigWithRuntimeSettings(
     systemPrompt: settings.systemPrompt || undefined,
     thinkingEnabled,
     thinkingConfig: modelConfig?.thinkingConfig,
-    reasoningEffort: settings.reasoningEffort,
+    reasoningEffort,
     responseSummary: modelConfig?.responseSummary ?? providerConfig.responseSummary,
     enablePromptCache: modelConfig?.enablePromptCache ?? providerConfig.enablePromptCache,
     enableSystemPromptCache:
@@ -2621,8 +2631,16 @@ export function useChatActions(): {
 
     const providerConfig = providerStore.getActiveProviderConfig()
     const effectiveMaxTokens = providerStore.getEffectiveMaxTokens(settings.maxTokens)
-    const activeModelThinkingConfig = providerStore.getActiveModelThinkingConfig()
+    const activeModelConfig = providerStore.getActiveModelConfig()
+    const activeModelThinkingConfig = activeModelConfig?.thinkingConfig
     const thinkingEnabled = settings.thinkingEnabled && !!activeModelThinkingConfig
+    const reasoningEffort = resolveReasoningEffortForModel({
+      reasoningEffort: settings.reasoningEffort,
+      reasoningEffortByModel: settings.reasoningEffortByModel,
+      providerId: providerConfig?.providerId,
+      modelId: activeModelConfig?.id ?? providerConfig?.model,
+      thinkingConfig: activeModelThinkingConfig
+    })
 
     const config: ProviderConfig | null = providerConfig
       ? {
@@ -2632,7 +2650,7 @@ export function useChatActions(): {
           systemPrompt: settings.systemPrompt || undefined,
           thinkingEnabled,
           thinkingConfig: activeModelThinkingConfig,
-          reasoningEffort: settings.reasoningEffort
+          reasoningEffort
         }
       : null
 

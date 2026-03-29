@@ -15,7 +15,11 @@ import {
   useProviderStore,
   modelSupportsVision
 } from '@renderer/stores/provider-store'
-import { useSettingsStore } from '@renderer/stores/settings-store'
+import {
+  useSettingsStore,
+  getReasoningEffortKey,
+  resolveReasoningEffortForModel
+} from '@renderer/stores/settings-store'
 import { useChatStore } from '@renderer/stores/chat-store'
 import { useChannelStore } from '@renderer/stores/channel-store'
 import { useQuotaStore } from '@renderer/stores/quota-store'
@@ -136,10 +140,12 @@ function selectAutoModel(setOpen: (v: boolean) => void): void {
 /** Settings popover shown next to model icon */
 function ModelSettingsPopover({
   model,
+  providerId,
   t,
   tChat
 }: {
   model: AIModelConfig | undefined
+  providerId?: string | null
   t: (key: string) => string
   tChat: (key: string, opts?: Record<string, unknown>) => string
 }): React.JSX.Element | null {
@@ -147,23 +153,46 @@ function ModelSettingsPopover({
   const supportsFastMode = supportsPriorityServiceTier(model)
   const supportsContextCompression = !!model
   const levels = model?.thinkingConfig?.reasoningEffortLevels
-  const defaultLevel = model?.thinkingConfig?.defaultReasoningEffort ?? 'medium'
   const thinkingEnabled = useSettingsStore((s) => s.thinkingEnabled)
   const fastModeEnabled = useSettingsStore((s) => s.fastModeEnabled)
   const reasoningEffort = useSettingsStore((s) => s.reasoningEffort)
+  const reasoningEffortByModel = useSettingsStore((s) => s.reasoningEffortByModel)
+  const effortKey = getReasoningEffortKey(providerId, model?.id)
+  const effectiveReasoningEffort = resolveReasoningEffortForModel({
+    reasoningEffort,
+    reasoningEffortByModel,
+    providerId,
+    modelId: model?.id,
+    thinkingConfig: model?.thinkingConfig
+  })
+
+  useEffect(() => {
+    if (!supportsThinking || reasoningEffort === effectiveReasoningEffort) return
+    useSettingsStore.getState().updateSettings({ reasoningEffort: effectiveReasoningEffort })
+  }, [supportsThinking, reasoningEffort, effectiveReasoningEffort])
 
   const toggleThinking = useCallback(() => {
     const store = useSettingsStore.getState()
     if (!store.thinkingEnabled && levels) {
-      store.updateSettings({ thinkingEnabled: true, reasoningEffort: defaultLevel })
+      store.updateSettings({ thinkingEnabled: true, reasoningEffort: effectiveReasoningEffort })
     } else {
       store.updateSettings({ thinkingEnabled: !store.thinkingEnabled })
     }
-  }, [levels, defaultLevel])
+  }, [levels, effectiveReasoningEffort])
 
-  const setEffort = useCallback((level: ReasoningEffortLevel) => {
-    useSettingsStore.getState().updateSettings({ reasoningEffort: level, thinkingEnabled: true })
-  }, [])
+  const setEffort = useCallback(
+    (level: ReasoningEffortLevel) => {
+      const store = useSettingsStore.getState()
+      store.updateSettings({
+        reasoningEffort: level,
+        reasoningEffortByModel: effortKey
+          ? { ...store.reasoningEffortByModel, [effortKey]: level }
+          : store.reasoningEffortByModel,
+        thinkingEnabled: true
+      })
+    },
+    [effortKey]
+  )
 
   const hasAnySetting = supportsThinking || supportsFastMode || supportsContextCompression
 
@@ -237,7 +266,7 @@ function ModelSettingsPopover({
                       type="button"
                       className={cn(
                         'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors text-left',
-                        thinkingEnabled && reasoningEffort === level
+                        thinkingEnabled && effectiveReasoningEffort === level
                           ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
                           : 'hover:bg-muted/60 text-foreground/80'
                       )}
@@ -389,6 +418,7 @@ export function ModelSwitcher(): React.JSX.Element {
   const autoResolvedModel = autoResolvedProvider?.models.find(
     (model) => model.id === autoSelection?.modelId
   )
+  const settingsProviderId = isAutoModeActive ? autoResolvedProvider?.id : displayProvider?.id
   const settingsModel = isAutoModeActive ? (autoResolvedModel ?? undefined) : displayModel
 
   const codexQuota = useMemo(() => {
@@ -743,7 +773,12 @@ export function ModelSwitcher(): React.JSX.Element {
       )}
 
       {/* Settings icon — model config popover */}
-      <ModelSettingsPopover model={settingsModel} t={t} tChat={tChat} />
+      <ModelSettingsPopover
+        model={settingsModel}
+        providerId={settingsProviderId}
+        t={t}
+        tChat={tChat}
+      />
     </div>
   )
 }

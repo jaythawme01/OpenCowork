@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { ProviderType, ReasoningEffortLevel } from '../lib/api/types'
+import type { ProviderType, ReasoningEffortLevel, ThinkingConfig } from '../lib/api/types'
 import { ipcStorage } from '../lib/ipc/ipc-storage'
 import {
   LEFT_SIDEBAR_DEFAULT_WIDTH,
@@ -31,6 +31,38 @@ function getSystemLanguage(): 'en' | 'zh' {
   return lang.startsWith('zh') ? 'zh' : 'en'
 }
 
+export function getReasoningEffortKey(
+  providerId?: string | null,
+  modelId?: string | null
+): string | null {
+  if (!providerId || !modelId) return null
+  return `${providerId}:${modelId}`
+}
+
+export function resolveReasoningEffortForModel({
+  reasoningEffort,
+  reasoningEffortByModel,
+  providerId,
+  modelId,
+  thinkingConfig
+}: {
+  reasoningEffort: ReasoningEffortLevel
+  reasoningEffortByModel?: Record<string, ReasoningEffortLevel>
+  providerId?: string | null
+  modelId?: string | null
+  thinkingConfig?: ThinkingConfig
+}): ReasoningEffortLevel {
+  const key = getReasoningEffortKey(providerId, modelId)
+  const levels = thinkingConfig?.reasoningEffortLevels
+  const savedEffort = key ? reasoningEffortByModel?.[key] : undefined
+
+  if (savedEffort && (!levels || levels.includes(savedEffort))) {
+    return savedEffort
+  }
+
+  return thinkingConfig?.defaultReasoningEffort ?? reasoningEffort
+}
+
 interface SettingsStore {
   provider: ProviderType
   apiKey: string
@@ -50,6 +82,7 @@ interface SettingsStore {
   thinkingEnabled: boolean
   fastModeEnabled: boolean
   reasoningEffort: ReasoningEffortLevel
+  reasoningEffortByModel: Record<string, ReasoningEffortLevel>
   teamToolsEnabled: boolean
   contextCompressionEnabled: boolean
   editorWorkspaceEnabled: boolean
@@ -117,6 +150,7 @@ export const useSettingsStore = create<SettingsStore>()(
       thinkingEnabled: false,
       fastModeEnabled: false,
       reasoningEffort: 'medium',
+      reasoningEffortByModel: {},
       teamToolsEnabled: false,
       contextCompressionEnabled: true,
       editorWorkspaceEnabled: false,
@@ -160,7 +194,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'opencowork-settings',
-      version: 9,
+      version: 10,
       storage: createJSONStorage(() => ipcStorage),
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>
@@ -231,6 +265,9 @@ export const useSettingsStore = create<SettingsStore>()(
         if (state.editorRemoteLanguageServiceEnabled === undefined) {
           state.editorRemoteLanguageServiceEnabled = false
         }
+        if (state.reasoningEffortByModel === undefined) {
+          state.reasoningEffortByModel = {}
+        }
         if (state.toolResultFormat === undefined) {
           state.toolResultFormat = 'toon'
         }
@@ -257,6 +294,7 @@ export const useSettingsStore = create<SettingsStore>()(
         thinkingEnabled: state.thinkingEnabled,
         fastModeEnabled: state.fastModeEnabled,
         reasoningEffort: state.reasoningEffort,
+        reasoningEffortByModel: state.reasoningEffortByModel,
         teamToolsEnabled: state.teamToolsEnabled,
         contextCompressionEnabled: state.contextCompressionEnabled,
         editorWorkspaceEnabled: state.editorWorkspaceEnabled,
