@@ -68,7 +68,7 @@ const FRIENDLY_MESSAGES: Record<FriendlyStatus, { zh: string[]; en: string[] }> 
   }
 }
 
-let lastPickIndex: Record<string, number> = {}
+const lastPickIndex: Record<string, number> = {}
 
 export function pickFriendlyMessage(status: FriendlyStatus, language: 'zh' | 'en'): string {
   const pool = FRIENDLY_MESSAGES[status]?.[language] ?? FRIENDLY_MESSAGES.idle[language]
@@ -125,7 +125,6 @@ export async function generateSessionTitle(
 ): Promise<SessionTitleResult | null> {
   const settings = useSettingsStore.getState()
 
-  // Try provider-store fast model config first, then fall back to settings-store
   const fastConfig = useProviderStore.getState().getFastProviderConfig()
   const config: ProviderConfig | null = fastConfig
     ? {
@@ -138,12 +137,12 @@ export async function generateSessionTitle(
         enableSystemPromptCache: useProviderStore.getState().getActiveModelConfig()
           ?.enableSystemPromptCache
       }
-    : settings.apiKey && settings.fastModel
+    : settings.apiKey && settings.model
       ? {
           type: settings.provider,
           apiKey: settings.apiKey,
           baseUrl: settings.baseUrl || undefined,
-          model: settings.fastModel,
+          model: settings.model,
           maxTokens: 100,
           temperature: 0.3,
           systemPrompt: TITLE_SYSTEM_PROMPT,

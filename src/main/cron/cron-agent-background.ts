@@ -482,10 +482,7 @@ function resolveCronProviderConfig(
     (settings.provider as ProviderType | undefined) ?? 'anthropic'
   )
   const fallbackModel =
-    (modelOverride as string | undefined) ??
-    (settings.fastModel as string | undefined) ??
-    (settings.model as string | undefined) ??
-    ''
+    (modelOverride as string | undefined) ?? (settings.model as string | undefined) ?? ''
   const fallbackApiKey = String(settings.apiKey ?? '')
   if (!fallbackApiKey && fallbackType !== 'openai-chat') {
     return null

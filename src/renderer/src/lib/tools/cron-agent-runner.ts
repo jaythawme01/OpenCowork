@@ -82,7 +82,7 @@ function getProviderConfig(
 
   if (!s.apiKey) return null
 
-  const model = modelOverride || s.fastModel || s.model
+  const model = modelOverride || s.model
   return {
     type: s.provider,
     apiKey: s.apiKey,

@@ -62,7 +62,7 @@ function getProviderConfig(): ProviderConfig {
       temperature: s.temperature
     }
   }
-  const fallbackModel = s.fastModel || s.model
+  const fallbackModel = s.model
   return {
     type: s.provider,
     apiKey: s.apiKey,
